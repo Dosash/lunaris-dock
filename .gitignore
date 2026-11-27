@@ -3,6 +3,11 @@
 !/.gitignore
 !/LICENSE
 !/README.md
+!/docs/
+!/docs/screenshots/
+!/docs/screenshots/dock.png
+!/docs/screenshots/start.png
+!/docs/screenshots/settings.png
 !/build.ps1
 !/src/
 !/src/Platform/
