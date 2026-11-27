@@ -1,0 +1,29 @@
+# Track project sources only. Profiles, recordings, logs and local builds stay local.
+*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/build.ps1
+!/src/
+!/src/Platform/
+!/src/UI/
+!/src/**/*.cs
+!/src/UI/Preferences.xaml
+!/src/App.config
+!/src/app.manifest
+!/src/LunarisDock.ico
+!/scripts/
+!/scripts/*.ps1
+!/packaging/
+!/packaging/Lunaris.iss
+!/packaging/portable/
+!/packaging/portable/README.txt
+!/packaging/portable/Тестовый запуск.cmd
+!/qa/
+!/qa/*.cs
+!/qa/*.ps1
+!/tests/
+!/tests/*.cs
+!/tests/*.ps1
+!/tests/Проверка оболочки.md
+!/tests/Проверка переносимой сборки.md

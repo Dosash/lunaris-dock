@@ -1,0 +1,163 @@
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Margin="12">
+  <Grid.Resources>
+    <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Ink}"/></Style>
+    <Style x:Key="Section" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+      <Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="2,17,0,9"/>
+    </Style>
+    <Style x:Key="Group" TargetType="Border">
+      <Setter Property="CornerRadius" Value="12"/><Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Background" Value="{DynamicResource Panel}"/><Setter Property="BorderBrush" Value="{DynamicResource Rule}"/>
+    </Style>
+    <Style x:Key="Line" TargetType="Border">
+      <Setter Property="Height" Value="1"/><Setter Property="Margin" Value="14,0"/>
+      <Setter Property="Background" Value="{DynamicResource Rule}"/><Setter Property="Opacity" Value=".7"/>
+    </Style>
+    <Style x:Key="SliderRail" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton">
+        <Grid Background="Transparent"><Border Height="4" CornerRadius="2" Background="{TemplateBinding Background}" VerticalAlignment="Center"/></Grid>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="Slider">
+      <Setter Property="IsMoveToPointEnabled" Value="True"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Slider">
+        <Grid Height="26" Background="Transparent">
+          <Track x:Name="PART_Track">
+            <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource SliderRail}" Background="{DynamicResource On}"/></Track.DecreaseRepeatButton>
+            <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Style="{StaticResource SliderRail}" Background="{DynamicResource Track}"/></Track.IncreaseRepeatButton>
+            <Track.Thumb><Thumb Width="17" Height="17"><Thumb.Template><ControlTemplate TargetType="Thumb">
+              <Ellipse Fill="White" Stroke="{DynamicResource Rule}"><Ellipse.Effect><DropShadowEffect Direction="270" ShadowDepth="1" BlurRadius="3" Opacity=".26"/></Ellipse.Effect></Ellipse>
+            </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          </Track>
+        </Grid>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+        <Grid Height="40" Background="Transparent" Margin="14,0">
+          <ContentPresenter VerticalAlignment="Center" Margin="0,0,49,0" TextElement.Foreground="{DynamicResource Ink}"/>
+          <Border x:Name="track" Width="34" Height="20" HorizontalAlignment="Right" CornerRadius="10" Background="{DynamicResource Track}">
+            <Grid>
+              <Border x:Name="onTrack" CornerRadius="10" Background="{DynamicResource On}" Opacity="0"/>
+              <Border x:Name="thumb" Width="16" Height="16" CornerRadius="8" Background="White" Margin="2,0" HorizontalAlignment="Left">
+                <Border.Effect><DropShadowEffect BlurRadius="3" ShadowDepth="1" Opacity=".32"/></Border.Effect>
+              </Border>
+            </Grid>
+          </Border>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="track" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter TargetName="track" Property="BorderThickness" Value="1"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="ThemeChoice" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="2,0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+        <Border x:Name="frame" Padding="4" CornerRadius="10" BorderThickness="2" BorderBrush="Transparent" Background="Transparent">
+          <ContentPresenter HorizontalAlignment="Stretch"/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="frame" Property="Background" Value="{DynamicResource Tint}"/></Trigger>
+          <Trigger Property="IsChecked" Value="True"><Setter TargetName="frame" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="frame" Property="Background" Value="{DynamicResource Tint}"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Padding" Value="10,6"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+        <Border x:Name="row" Padding="{TemplateBinding Padding}" CornerRadius="5" Background="Transparent"><ContentPresenter/></Border>
+        <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="row" Property="Background" Value="{DynamicResource Tint}"/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+        <Grid>
+          <ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen,Mode=TwoWay,RelativeSource={RelativeSource TemplatedParent}}">
+            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Rule}" BorderThickness="1" CornerRadius="6"/></ControlTemplate></ToggleButton.Template>
+          </ToggleButton>
+          <ContentPresenter Margin="10,0,24,0" Content="{TemplateBinding SelectionBoxItem}" IsHitTestVisible="False" VerticalAlignment="Center"/>
+          <Path Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource Muted}" StrokeThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,9,0" IsHitTestVisible="False"/>
+          <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False">
+            <Border Padding="4" Margin="0,2" CornerRadius="8" MinWidth="{Binding ActualWidth,RelativeSource={RelativeSource TemplatedParent}}" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Rule}" BorderThickness="1">
+              <ScrollViewer MaxHeight="220"><ItemsPresenter/></ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+  </Grid.Resources>
+  <Border CornerRadius="17" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Rule}" BorderThickness="1">
+    <Border.Effect><DropShadowEffect Color="#192436" Opacity=".32" Direction="270" ShadowDepth="3" BlurRadius="15"/></Border.Effect>
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="47"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Border Background="{DynamicResource Panel}" CornerRadius="17,17,0,0" BorderBrush="{DynamicResource Rule}" BorderThickness="0,0,0,1">
+        <Grid x:Name="Toolbar" Background="Transparent">
+          <Button x:Name="CloseSettings" AutomationProperties.AutomationId="CloseSettings" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0" Width="32" Height="30" Cursor="Hand" ToolTip="Закрыть настройки" AutomationProperties.Name="Закрыть настройки">
+            <Button.Template><ControlTemplate TargetType="Button"><Grid Background="Transparent"><Border x:Name="hover" CornerRadius="7" Background="{DynamicResource Rule}" Opacity="0"/>
+              <Path x:Name="cross" Data="M0,0 L9,9 M9,0 L0,9" Stroke="{DynamicResource Ink}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="hover" Property="Opacity" Value=".75"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="hover" Property="Opacity" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Button.Template>
+          </Button>
+          <TextBlock Text="Настройки Dock" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
+      </Border>
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer.Resources>
+          <Style TargetType="ScrollBar"><Setter Property="Width" Value="9"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+              <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True" Margin="0,5,2,5">
+                <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+                <Track.Thumb><Thumb MinHeight="20"><Thumb.Template><ControlTemplate TargetType="Thumb">
+                  <Border Background="{DynamicResource Muted}" CornerRadius="4" Opacity=".45" Margin="1,0"/>
+                </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+              </Track>
+            </ControlTemplate></Setter.Value></Setter>
+          </Style>
+        </ScrollViewer.Resources>
+        <StackPanel Margin="22,0,22,12">
+        <TextBlock Style="{StaticResource Section}" Text="Оформление"/>
+        <Border Style="{StaticResource Group}" Padding="7">
+          <StackPanel>
+            <UniformGrid x:Name="ThemeOptions" Rows="1" Columns="4"/>
+            <StackPanel x:Name="CustomColors" Visibility="Collapsed">
+              <Border Style="{StaticResource Line}" Margin="6,6"/>
+              <UniformGrid x:Name="ColorFields" Rows="1" Columns="3" Margin="4,0,4,4"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+        <TextBlock Style="{StaticResource Section}" Text="Dock"/>
+        <Border Style="{StaticResource Group}"><StackPanel>
+          <Grid Height="44" Margin="14,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="56"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Размер значков" VerticalAlignment="Center"/>
+            <Slider x:Name="DockSize" Grid.Column="1" AutomationProperties.AutomationId="DockSize" AutomationProperties.Name="Размер Dock" VerticalAlignment="Center" Minimum="28" Maximum="80" TickFrequency="2" IsSnapToTickEnabled="True" SmallChange="2" LargeChange="8"/>
+            <TextBlock x:Name="SizeValue" Grid.Column="2" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+          </Grid>
+          <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="Magnify" AutomationProperties.AutomationId="Magnify" Content="Увеличивать значки при наведении"/>
+          <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="HideDockWhenCovered" AutomationProperties.AutomationId="HideDockWhenCovered" Content="Скрывать Dock в развёрнутых окнах"
+                    ToolTip="Скрывать Dock при развёрнутом или полноэкранном окне. У нижнего края экрана Dock появится снова."/>
+          <StackPanel x:Name="MonitorRow"><Border Style="{StaticResource Line}"/>
+            <DockPanel Margin="14,7" LastChildFill="True">
+              <ComboBox x:Name="DockMonitor" DockPanel.Dock="Right" AutomationProperties.AutomationId="DockMonitor" AutomationProperties.Name="Показывать Dock на экране" MinHeight="29" MinWidth="167" MaxWidth="240"/>
+              <TextBlock Text="Показывать на экране" Margin="0,0,12,0" VerticalAlignment="Center"/>
+            </DockPanel>
+          </StackPanel>
+        </StackPanel></Border>
+        <TextBlock Style="{StaticResource Section}" Text="Рабочий стол"/>
+        <Border Style="{StaticResource Group}"><StackPanel>
+          <CheckBox x:Name="ReplaceTaskbar" AutomationProperties.AutomationId="ReplaceTaskbar" Content="Заменять панель задач"/>
+          <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="HideWindowsStart" AutomationProperties.AutomationId="HideWindowsStart" Content="Открывать Пуск Dock вместо меню Windows"
+                    ToolTip="В обычном режиме кнопка «Пуск» на панели Windows открывает меню Dock. В пробном режиме выбор сохраняется для пробного профиля."/>
+          <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="Startup" AutomationProperties.AutomationId="Startup" Content="Запускать при входе в Windows"/>
+        </StackPanel></Border>
+      </StackPanel></ScrollViewer>
+    </Grid>
+  </Border>
+</Grid>
