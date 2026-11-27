@@ -3,7 +3,9 @@
 !/.gitignore
 !/LICENSE
 !/README.md
+!/AGENTS.md
 !/docs/
+!/docs/DEVELOPMENT.md
 !/docs/screenshots/
 !/docs/screenshots/dock.png
 !/docs/screenshots/start.png
