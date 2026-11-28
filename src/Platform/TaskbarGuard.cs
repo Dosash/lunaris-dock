@@ -49,7 +49,7 @@ namespace Lunaris
                         while (!ready.WaitOne(80))
                         {
                             if (guard.HasExited || limit.ElapsedMilliseconds > 12000)
-                                throw new InvalidOperationException("Не удалось включить замену панели задач. Проверьте, что Проводник запущен.");
+                                throw new InvalidOperationException(Loc.Get("ReplaceTaskbarError"));
                         }
                     }
                     catch { Stop(); throw; }
@@ -63,7 +63,7 @@ namespace Lunaris
             try
             {
                 if (guard != null && !guard.WaitForExit(12000))
-                    throw new InvalidOperationException("Восстановление панели задач всё ещё выполняется.");
+                    throw new InvalidOperationException(Loc.Get("TaskbarRecovering"));
                 if (guard != null && File.Exists(Journal)) Recover();
             }
             finally
@@ -80,7 +80,7 @@ namespace Lunaris
             using (var gate = new Mutex(false, LockName))
             {
                 if (!Acquire(gate, 5500)) return; // A live guardian owns this session.
-                try { if (!Restore()) throw new IOException("Для восстановления панели задач требуется работающий Проводник."); }
+                try { if (!Restore()) throw new IOException(Loc.Get("ExplorerRequired")); }
                 finally { gate.ReleaseMutex(); }
             }
         }
@@ -234,7 +234,7 @@ namespace Lunaris
             if (!File.Exists(Journal)) return true;
             string[] lines = File.ReadAllLines(Journal);
             if (lines.Length == 0 || (lines[0] != "1" && lines[0] != "0"))
-                throw new IOException("Повреждена запись восстановления панели задач.");
+                throw new IOException(Loc.Get("RecoveryCorrupt"));
             bool autoHide = lines[0] == "1";
             var timer = Stopwatch.StartNew();
             while (timer.ElapsedMilliseconds < 6800)

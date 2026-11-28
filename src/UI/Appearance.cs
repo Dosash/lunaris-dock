@@ -18,6 +18,7 @@ namespace Lunaris
         internal static SolidColorBrush Border { get; private set; }
         internal static SolidColorBrush Accent { get; private set; }
         internal static SolidColorBrush Selection { get; private set; }
+        internal static LiquidGlassMaterial Glass { get; private set; }
         private static readonly Stopwatch sinceRead = Stopwatch.StartNew();
         private static string lastMode;
         private static string lastSurface, lastText, lastAccent;
@@ -27,13 +28,22 @@ namespace Lunaris
 
         internal static bool Refresh(string mode)
         {
-            return RefreshPalette(mode,UserSettings.DefaultCustomSurface,UserSettings.DefaultCustomText,UserSettings.DefaultCustomAccent);
+            return RefreshAppearance(mode,UserSettings.DefaultCustomSurface,UserSettings.DefaultCustomText,UserSettings.DefaultCustomAccent,false);
         }
 
         internal static bool RefreshFor(UserSettings settings)
         {
             if (settings == null) return Refresh("system");
-            return RefreshPalette(settings.Theme,settings.CustomSurface,settings.CustomText,settings.CustomAccent);
+            return RefreshAppearance(settings.Theme,settings.CustomSurface,settings.CustomText,settings.CustomAccent,settings.LiquidGlass);
+        }
+
+        private static bool RefreshAppearance(string mode, string surface, string text, string accent, bool liquidGlass)
+        {
+            bool paletteChanged = RefreshPalette(mode, surface, text, accent);
+            bool enabled = liquidGlass && LaunchGlass.Enabled();
+            if (!paletteChanged && enabled == (Glass != null)) return false;
+            Glass = enabled ? new LiquidGlassMaterial(Surface.Color, Panel.Color, Accent.Color, Dark) : null;
+            return true;
         }
 
         private static bool RefreshPalette(string mode,string surface,string text,string accent)

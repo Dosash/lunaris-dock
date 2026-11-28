@@ -94,7 +94,7 @@ namespace Lunaris
         {
             var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0,10,0,0) };
-            footer.Children.Add(EditorButton(cancelId, "Отмена", false, delegate { CloseEditor(true); }));
+            footer.Children.Add(EditorButton(cancelId, Loc.Get("Cancel"), false, delegate { CloseEditor(true); }));
             Grid.SetRow(footer,4); panel.Children.Add(footer);
             return footer;
         }
@@ -102,25 +102,25 @@ namespace Lunaris
         private void EditFolderName(LibraryItem previous, string parentId)
         {
             string currentId = previous == null ? null : previous.Id;
-            var panel = BeginEditor(previous == null ? "Новая папка" : "Переименовать папку", FolderPath(parentId));
-            var field = EditorInput(panel, "Launchpad.Folder.Name", "Название папки", previous == null ? "" : previous.Name);
+            var panel = BeginEditor(previous == null ? Loc.Get("NewFolder") : Loc.Get("RenameFolder"), FolderPath(parentId));
+            var field = EditorInput(panel, "Launchpad.Folder.Name", Loc.Get("FolderName"), previous == null ? "" : previous.Name);
             var status = Text("",13); status.VerticalAlignment = VerticalAlignment.Top; status.TextWrapping = TextWrapping.Wrap;
             status.SetResourceReference(TextBlock.ForegroundProperty, "LibraryText");
             Grid.SetRow(status,3); panel.Children.Add(status);
             var footer = Footer(panel, "Launchpad.Folder.Cancel");
             editorSubmit = delegate {
                 string name = field.Text.Trim();
-                if (name.Length == 0) { status.Text = "Введите название папки."; Keyboard.Focus(field); return; }
+                if (name.Length == 0) { status.Text = Loc.Get("FolderNameRequired"); Keyboard.Focus(field); return; }
                 string id = currentId;
                 if (previous != null && String.Equals(name, previous.Name, StringComparison.Ordinal)) { CloseEditor(true); return; }
                 bool saved;
                 if (previous == null) { id = library.CreateFolder(name, parentId); saved = id != null; }
                 else saved = library.RenameFolder(id, name);
-                if (!saved) { status.Text = "Выберите другое название. Папка с таким именем уже существует или была перемещена."; return; }
+                if (!saved) { status.Text = Loc.Get("FolderConflict"); return; }
                 ui.PersistLibrary();
                 CloseEditor(false); Navigate(parentId, id);
             };
-            footer.Children.Add(EditorButton("Launchpad.Folder.Save", previous == null ? "Создать" : "Сохранить", true, editorSubmit));
+            footer.Children.Add(EditorButton("Launchpad.Folder.Save", previous == null ? Loc.Get("Create") : Loc.Get("Save"), true, editorSubmit));
             Keyboard.Focus(field);
         }
 
@@ -154,8 +154,8 @@ namespace Lunaris
 
         private void MovePicker(LibraryItem item)
         {
-            var panel = BeginEditor("Переместить в папку", item.Name);
-            var field = EditorInput(panel, "Launchpad.Picker.Search", "Поиск папки", "");
+            var panel = BeginEditor(Loc.Get("MoveToFolder"), item.Name);
+            var field = EditorInput(panel, "Launchpad.Picker.Search", Loc.Get("SearchFolders"), "");
             var rows = PickerRows(panel);
             Footer(panel, "Launchpad.Picker.Cancel");
             Action populate = delegate {
@@ -183,7 +183,7 @@ namespace Lunaris
                     };
                     rows.Children.Add(button);
                 }
-                if (rows.Children.Count == 0) rows.Children.Add(Text("Подходящих папок нет", 14));
+                if (rows.Children.Count == 0) rows.Children.Add(Text(Loc.Get("NoFolders"), 14));
             };
             field.TextChanged += delegate { populate(); };
             WirePickerKeys(field, rows); populate(); Keyboard.Focus(field);
@@ -191,8 +191,8 @@ namespace Lunaris
 
         private void AddApps(string destination)
         {
-            var panel = BeginEditor("Добавить приложения", FolderPath(destination));
-            var field = EditorInput(panel, "Launchpad.Picker.Search", "Поиск приложения", "");
+            var panel = BeginEditor(Loc.Get("AddApps"), FolderPath(destination));
+            var field = EditorInput(panel, "Launchpad.Picker.Search", Loc.Get("SearchApp"), "");
             var rows = PickerRows(panel);
             var selectedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var footer = Footer(panel, "Launchpad.Picker.Cancel");
@@ -206,7 +206,7 @@ namespace Lunaris
                 if (changed) ui.PersistLibrary();
                 CloseEditor(false); Navigate(destination, null);
             });
-            var apply = EditorButton("Launchpad.Picker.Apply", "Добавить", true, onApply);
+            var apply = EditorButton("Launchpad.Picker.Apply", Loc.Get("Add"), true, onApply);
             apply.IsEnabled = false; footer.Children.Add(apply);
             Action populate = delegate {
                 rows.Children.Clear();
@@ -224,7 +224,7 @@ namespace Lunaris
                     check.Unchecked += delegate { selectedIds.Remove(item.Id); apply.IsEnabled = selectedIds.Count > 0; };
                     rows.Children.Add(check);
                 }
-                if (rows.Children.Count == 0) rows.Children.Add(Text(query.Length == 0 ? "Все приложения уже в этой папке" : "Ничего не найдено", 14));
+                if (rows.Children.Count == 0) rows.Children.Add(Text(query.Length == 0 ? Loc.Get("AllInFolder") : Loc.Get("NoResults"), 14));
             };
             field.TextChanged += delegate { populate(); };
             WirePickerKeys(field, rows); populate(); Keyboard.Focus(field);

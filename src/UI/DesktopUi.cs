@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Runtime.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -15,7 +19,7 @@ namespace Lunaris
         internal readonly PlatformServices Platform;
         internal readonly UserSettings Settings;
         private readonly Action save;
-        internal readonly Action Exit;
+        private readonly Action exit;
         private readonly Dispatcher dispatcher;
         private sealed class Surface
         {
@@ -44,6 +48,9 @@ namespace Lunaris
         }
         private LaunchSurface launchpad;
         private Preferences preferences;
+        internal ReleaseInfo AvailableUpdate { get; private set; }
+        private readonly ReleaseUpdates releases = new ReleaseUpdates();
+        private DispatcherTimer releaseTimer;
         private DispatcherTimer timer, pointerTimer;
         private DispatcherTimer pendingSizeSave;
         private bool disposed, reading, reread;
@@ -52,10 +59,11 @@ namespace Lunaris
         internal List<AppEntry> Catalog = new List<AppEntry>();
         internal List<WindowEntry> Windows = new List<WindowEntry>();
         private Dictionary<string,AppEntry> byId = new Dictionary<string,AppEntry>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, AppEntry> filePins = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
 
         public DesktopUi(PlatformServices platform, UserSettings settings, Action save, Action exit)
         {
-            Platform = platform; Settings = settings; this.save = save; Exit = exit;
+            Platform = platform; Settings = settings; this.save = save; this.exit = exit;
             dispatcher = Dispatcher.CurrentDispatcher;
             Monitors = new ScreenInfo[0];
         }
@@ -73,6 +81,36 @@ namespace Lunaris
             pointerTimer = new DispatcherTimer(DispatcherPriority.Input, dispatcher) { Interval = TimeSpan.FromMilliseconds(60) };
             pointerTimer.Tick += delegate { UpdateVisibility(true); };
             pointerTimer.Start();
+            releaseTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromHours(6) };
+            releaseTimer.Tick += RefreshUpdate;
+            RefreshUpdate(this, EventArgs.Empty);
+        }
+
+        // Invoked on the WPF dispatcher. Schedule the next check after this one
+        // finishes so a slow or unavailable service cannot produce overlapping polls.
+        private async void RefreshUpdate(object sender, EventArgs args)
+        {
+            releaseTimer.Stop();
+            ReleaseInfo latest;
+            try { latest = await Task.Run<ReleaseInfo>(new Func<Task<ReleaseInfo>>(releases.LatestAsync)); }
+            catch (HttpRequestException) { return; }
+            catch (OperationCanceledException) { return; }
+            catch (ObjectDisposedException) { return; }
+            catch (SerializationException) { return; }
+            catch (System.Xml.XmlException) { return; }
+            catch (IOException) { return; }
+            finally { if (!disposed) releaseTimer.Start(); }
+            SetAvailableUpdate(latest);
+        }
+
+        private void SetAvailableUpdate(ReleaseInfo latest)
+        {
+            if (disposed || latest == AvailableUpdate) return;
+            if (AvailableUpdate != null && latest != null && AvailableUpdate.Url == latest.Url) return;
+            AvailableUpdate = latest;
+            InvalidateDocks();
+            RenderDocks(false);
+            if (preferences != null) preferences.RefreshUpdates();
         }
 
         private void OnShellChanged()
@@ -115,6 +153,7 @@ namespace Lunaris
                     {
                         Catalog = apps;
                         byId = apps.ToDictionary(a => a.Id, StringComparer.OrdinalIgnoreCase);
+                        filePins.Clear();
                         CanonicalizePins();
                         ChooseInitialPins();
                     }
@@ -130,14 +169,20 @@ namespace Lunaris
 
         private void CanonicalizePins()
         {
-            // An unregistered executable may gain a shell shortcut after it was pinned.
-            // Window grouping and the pin must use the same current application identity.
+            // An executable pin and a previously pinned AppsFolder entry can refer to
+            // the same app. Preserve the executable launch target and the first slot.
+            var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in Settings.Pins.Where(ShellCatalog.IsExecutable))
+            {
+                files[path] = path;
+                files[Platform.PinIdentity(path)] = path;
+            }
             var pins = new List<string>();
             foreach (var id in Settings.Pins)
             {
-                var app = Platform.ResolveApp(id);
-                string canonical = app == null ? id : app.Id;
-                if (!pins.Any(p => IdEqual(p, canonical))) pins.Add(canonical);
+                string path;
+                string stored = files.TryGetValue(Platform.PinTarget(id), out path) ? path : id;
+                if (!pins.Any(p => IdEqual(p, stored))) pins.Add(stored);
             }
             if (!Settings.Pins.SequenceEqual(pins, StringComparer.OrdinalIgnoreCase))
             {
@@ -181,6 +226,14 @@ namespace Lunaris
             try
             {
                 Windows = Platform.GetWindows();
+                // A window can advertise a different AppUserModelID than the primary
+                // Start entry for its executable. Group it with an explicit file pin.
+                foreach (var window in Windows)
+                {
+                    if (window.ProcessPath == null || !Settings.Pins.Contains(window.ProcessPath, StringComparer.OrdinalIgnoreCase)) continue;
+                    var app = FindApp(window.ProcessPath);
+                    if (app != null) { window.AppId = app.Id; window.App = app; }
+                }
                 bool newTheme = Appearance.RefreshFor(Settings);
                 bool newLayout = SyncScreens();
                 if (newTheme)
@@ -268,7 +321,7 @@ namespace Lunaris
 
         private void UpdateVisibility(bool animate)
         {
-            if (disposed || surfaces.Count == 0) return;
+            if (disposed || dispatcher.HasShutdownStarted || surfaces.Count == 0) return;
             long now = clock.ElapsedMilliseconds;
             bool checkCover = now >= nextCoverCheck;
             if (checkCover)
@@ -333,6 +386,15 @@ namespace Lunaris
         internal AppEntry FindApp(string id)
         {
             AppEntry entry;
+            if (ShellCatalog.IsExecutable(id))
+            {
+                if (!filePins.TryGetValue(id, out entry))
+                {
+                    entry = Platform.ResolveExecutablePin(id);
+                    if (entry != null) filePins[id] = entry;
+                }
+                return entry;
+            }
             if (byId.TryGetValue(id, out entry)) return entry;
             var window = Windows.FirstOrDefault(w => IdEqual(w.AppId, id) && w.App != null);
             if (window != null) return window.App;
@@ -342,12 +404,17 @@ namespace Lunaris
         }
 
         internal static bool IdEqual(string a, string b) { return String.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
-        internal bool Pinned(string id) { return Settings.Pins.Any(pin => IdEqual(pin, id)); }
+        internal string PinKey(string id)
+        {
+            return Settings.Pins.FirstOrDefault(pin => IdEqual(pin, id) || IdEqual(Platform.PinIdentity(pin), id));
+        }
+        internal bool Pinned(string id) { return PinKey(id) != null; }
         internal List<WindowEntry> WindowsFor(string id) { return Windows.Where(w => IdEqual(w.AppId, id)).ToList(); }
 
         internal void TogglePin(AppEntry app)
         {
-            if (Pinned(app.Id)) Settings.Pins.RemoveAll(pin => IdEqual(pin, app.Id));
+            string key = PinKey(app.Id);
+            if (key != null) Settings.Pins.RemoveAll(pin => IdEqual(pin, key));
             else Settings.Pins.Add(app.Id);
             Settings.InitializePins = false;
             Changed();
@@ -364,10 +431,27 @@ namespace Lunaris
             Changed();
         }
 
+        internal void DropFiles(string[] pins, string anchor, bool after)
+        {
+            if (pins.Length == 0) return;
+            var order = Settings.Pins;
+            int at = order.FindIndex(id => IdEqual(id, anchor));
+            at = at < 0 ? order.Count : at + (after ? 1 : 0);
+            var moved = new HashSet<string>(pins, StringComparer.OrdinalIgnoreCase);
+            moved.UnionWith(pins.Select(Platform.PinIdentity));
+            Func<string,bool> keep = id => !moved.Contains(id) && !moved.Contains(Platform.PinTarget(id));
+            // Compute both sides before removing a duplicate (possibly the anchor).
+            var result = order.Take(at).Where(keep).Concat(pins).Concat(order.Skip(at).Where(keep)).ToList();
+            if (order.SequenceEqual(result, StringComparer.OrdinalIgnoreCase)) return;
+            Settings.Pins = result;
+            Settings.InitializePins = false;
+            Changed();
+        }
+
         private void Persist()
         {
             try { save(); }
-            catch (Exception ex) { Alert("Не удалось применить настройки", ex); }
+            catch (Exception ex) { Alert(Loc.Get("ApplyError"), ex); }
         }
 
         internal void PersistLibrary() { Persist(); }
@@ -393,6 +477,18 @@ namespace Lunaris
             Persist();
         }
 
+        internal void ChangeLanguage(string code)
+        {
+            if (code == Settings.Language) return;
+            Settings.Language = code;
+            Loc.Use(code);
+            // Preferences and Start are mutually exclusive. Rebuild the cached Start
+            // window on its next open so all its controls use the selected language.
+            if (launchpad != null) { launchpad.Close(); launchpad = null; }
+            if (preferences != null) preferences.ApplyLanguage();
+            Changed();
+        }
+
         internal void Changed()
         {
             if (pendingSizeSave != null) pendingSizeSave.Stop();
@@ -405,6 +501,7 @@ namespace Lunaris
 
         internal void OpenPreferences(ScreenInfo screen)
         {
+            if (disposed) return;
             if (screen != null) ActiveMonitor = screen;
             if (launchpad != null && launchpad.IsVisible) launchpad.Dismiss();
             if (preferences == null)
@@ -422,23 +519,35 @@ namespace Lunaris
         {
             if (launchpad != null && launchpad.IsVisible) launchpad.Dismiss();
             try { Platform.Launch(app); }
-            catch (Exception ex) { Alert("Не удалось открыть «" + app.Name + "»", ex); }
+            catch (Exception ex) { Alert(Loc.Format("LaunchError", app.Name), ex); }
         }
 
         internal void Activate(WindowEntry window)
         {
             try { Platform.Activate(window); }
-            catch (Exception ex) { Alert("Не удалось переключиться на окно", ex); }
+            catch (Exception ex) { Alert(Loc.Get("SwitchWindowError"), ex); }
         }
 
         private void Alert(string message, Exception ex)
         {
-            MessageBox.Show(message + ".\n\n" + ex.Message, "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(message + "\n\n" + ex.Message, "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        internal void Exit()
+        {
+            if (disposed) return;
+            // Window.Closed may run before the dispatcher's ShutdownStarted event.
+            // Stop the UI while it still owns all its windows, then end the WPF app.
+            Dispose();
+            exit();
         }
 
         public void Dispose()
         {
+            if (disposed) return;
             disposed = true;
+            if (releaseTimer != null) releaseTimer.Stop();
+            releases.Dispose();
             Platform.ShellChanged -= OnShellChanged;
             Platform.ToggleRequested -= OnToggle;
             Platform.WindowsStartRequested -= ShowLaunchpad;

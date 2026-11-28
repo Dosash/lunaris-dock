@@ -1,4 +1,6 @@
 ﻿# Common probes for a dedicated Windows 11 test account or VM.
+Add-Type -AssemblyName UIAutomationClient
+
 function Assert-LabAccount([string]$ExpectedUserSid) {
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     if ($ExpectedUserSid -ne $sid) { throw "The specified disposable-account SID does not match this session ($sid)." }
@@ -32,7 +34,6 @@ public static class LunarisLab {
     public static int Owner(IntPtr h) { int id; GetWindowThreadProcessId(h,out id); return id; }
     public static ulong State() { var a=new AppBar(); a.cbSize=(uint)Marshal.SizeOf(typeof(AppBar)); return SHAppBarMessage(4, ref a).ToUInt64(); }
     public static IntPtr Bar() { return FindWindow("Shell_TrayWnd",null); }
-    public static IntPtr WindowTitle(string title) { return FindWindow(null,title); }
     public static bool BarVisible() { return Bar()!=IntPtr.Zero && IsWindowVisible(Bar()); }
     public static void Key(byte key,bool up) { keybd_event(key,0,up?2u:0u,UIntPtr.Zero); }
 }
@@ -46,27 +47,31 @@ function Wait-Observed([scriptblock]$Condition, [string]$Label, [int]$Seconds=15
     } while ($clock.Elapsed.TotalSeconds -lt $Seconds)
     throw "Failed: $Label"
 }
-function Invoke-Installer([string]$File, [string]$Log) {
+function Invoke-Installer([string]$File, [string]$Log, [string]$Language, [string]$Tasks) {
     $options = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER', ('/LOG="' + $Log + '"'))
+    if ($Language) { $options += "/LANG=$Language" }
+    if ($Tasks) { $options += "/MERGETASKS=$Tasks" }
     $proc = Start-Process -FilePath $File -ArgumentList $options -WindowStyle Hidden -Wait -PassThru
     if ($proc.ExitCode -ne 0) { throw "Setup exited with $($proc.ExitCode). See $Log" }
 }
 
-function Get-LabWindow([string]$Title, [Diagnostics.Process]$Dock) {
-    $hwnd = [LunarisLab]::WindowTitle($Title)
-    if ($hwnd -ne [IntPtr]::Zero -and [LunarisLab]::Owner($hwnd) -eq $Dock.Id -and [LunarisLab]::IsWindowVisible($hwnd)) { return $hwnd }
+function Get-LabWindow([string]$Id, [Diagnostics.Process]$Dock) {
+    $processMatch = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $Dock.Id)
+    $idMatch = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
+    $query = [Windows.Automation.AndCondition]::new($processMatch, $idMatch)
+    $window = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $query)
+    if ($window -and !$window.Current.IsOffscreen) { return [IntPtr]$window.Current.NativeWindowHandle }
     return [IntPtr]::Zero
 }
 
 function Open-LabSettings([string]$Exe, [Diagnostics.Process]$Dock) {
-    Add-Type -AssemblyName UIAutomationClient
-    if ((Get-LabWindow 'Lunaris — Пуск' $Dock) -eq [IntPtr]::Zero) {
+    if ((Get-LabWindow 'Launchpad' $Dock) -eq [IntPtr]::Zero) {
         Start-Process $Exe -ArgumentList '--toggle' -Wait -WindowStyle Hidden
     }
-    Wait-Observed { [LunarisLab]::Owner([LunarisLab]::GetForegroundWindow()) -eq $Dock.Id -and (Get-LabWindow 'Lunaris — Пуск' $Dock) -ne [IntPtr]::Zero } 'installed Launchpad has keyboard focus'
+    Wait-Observed { [LunarisLab]::Owner([LunarisLab]::GetForegroundWindow()) -eq $Dock.Id -and (Get-LabWindow 'Launchpad' $Dock) -ne [IntPtr]::Zero } 'installed Launchpad has keyboard focus'
     (New-Object -ComObject WScript.Shell).SendKeys('^,')
-    Wait-Observed { (Get-LabWindow 'Lunaris — Настройки' $Dock) -ne [IntPtr]::Zero } 'settings opened by keyboard'
-    return [Windows.Automation.AutomationElement]::FromHandle((Get-LabWindow 'Lunaris — Настройки' $Dock))
+    Wait-Observed { (Get-LabWindow 'Settings' $Dock) -ne [IntPtr]::Zero } 'settings opened by keyboard'
+    return [Windows.Automation.AutomationElement]::FromHandle((Get-LabWindow 'Settings' $Dock))
 }
 function Get-LabSetting($Root, [string]$Id) {
     $match = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
@@ -80,7 +85,7 @@ function Set-LabToggle($Root, [string]$Id, [bool]$Enabled) {
 }
 function Close-LabSettings($Root, [Diagnostics.Process]$Dock) {
     (Get-LabSetting $Root 'CloseSettings').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
-    Wait-Observed { (Get-LabWindow 'Lunaris — Настройки' $Dock) -eq [IntPtr]::Zero } 'settings closed after live changes'
+    Wait-Observed { (Get-LabWindow 'Settings' $Dock) -eq [IntPtr]::Zero } 'settings closed after live changes'
 }
 function Set-InstalledShellOptions([string]$Exe, [Diagnostics.Process]$Dock) {
     $root = Open-LabSettings $Exe $Dock

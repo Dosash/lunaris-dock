@@ -8,11 +8,22 @@
     </Style>
     <Style x:Key="Group" TargetType="Border">
       <Setter Property="CornerRadius" Value="12"/><Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Background" Value="{DynamicResource Panel}"/><Setter Property="BorderBrush" Value="{DynamicResource Rule}"/>
+      <Setter Property="Background" Value="{DynamicResource GroupSurface}"/><Setter Property="BorderBrush" Value="{DynamicResource Rule}"/>
     </Style>
     <Style x:Key="Line" TargetType="Border">
       <Setter Property="Height" Value="1"/><Setter Property="Margin" Value="14,0"/>
       <Setter Property="Background" Value="{DynamicResource Rule}"/><Setter Property="Opacity" Value=".7"/>
+    </Style>
+    <Style x:Key="VersionLink" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border Padding="3,2" CornerRadius="4" BorderBrush="Transparent" BorderThickness="1" x:Name="outline">
+          <TextBlock Text="{TemplateBinding Content}" Foreground="{DynamicResource Accent}" TextDecorations="Underline" TextWrapping="Wrap"/>
+        </Border>
+        <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter TargetName="outline" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        </Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="SliderRail" TargetType="RepeatButton">
       <Setter Property="Focusable" Value="False"/>
@@ -89,19 +100,19 @@
       </ControlTemplate></Setter.Value></Setter>
     </Style>
   </Grid.Resources>
-  <Border CornerRadius="17" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Rule}" BorderThickness="1">
+  <Border CornerRadius="17" Background="{DynamicResource WindowSurface}" BorderBrush="{DynamicResource WindowRim}" BorderThickness="1">
     <Border.Effect><DropShadowEffect Color="#192436" Opacity=".32" Direction="270" ShadowDepth="3" BlurRadius="15"/></Border.Effect>
     <Grid>
       <Grid.RowDefinitions><RowDefinition Height="47"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-      <Border Background="{DynamicResource Panel}" CornerRadius="17,17,0,0" BorderBrush="{DynamicResource Rule}" BorderThickness="0,0,0,1">
+      <Border Background="{DynamicResource GroupSurface}" CornerRadius="17,17,0,0" BorderBrush="{DynamicResource Rule}" BorderThickness="0,0,0,1">
         <Grid x:Name="Toolbar" Background="Transparent">
-          <Button x:Name="CloseSettings" AutomationProperties.AutomationId="CloseSettings" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0" Width="32" Height="30" Cursor="Hand" ToolTip="Закрыть настройки" AutomationProperties.Name="Закрыть настройки">
+          <Button x:Name="CloseSettings" AutomationProperties.AutomationId="CloseSettings" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0" Width="32" Height="30" Cursor="Hand" ToolTip="{DynamicResource Strings.CloseSettings}" AutomationProperties.Name="{DynamicResource Strings.CloseSettings}">
             <Button.Template><ControlTemplate TargetType="Button"><Grid Background="Transparent"><Border x:Name="hover" CornerRadius="7" Background="{DynamicResource Rule}" Opacity="0"/>
               <Path x:Name="cross" Data="M0,0 L9,9 M9,0 L0,9" Stroke="{DynamicResource Ink}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Grid><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="hover" Property="Opacity" Value=".75"/></Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="hover" Property="Opacity" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Button.Template>
           </Button>
-          <TextBlock Text="Настройки Dock" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          <TextBlock Text="{DynamicResource Strings.DockSettings}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
       </Border>
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -119,43 +130,79 @@
           </Style>
         </ScrollViewer.Resources>
         <StackPanel Margin="22,0,22,12">
-        <TextBlock Style="{StaticResource Section}" Text="Оформление"/>
+        <TextBlock Style="{StaticResource Section}" Text="{DynamicResource Strings.Appearance}"/>
         <Border Style="{StaticResource Group}" Padding="7">
           <StackPanel>
+            <DockPanel Margin="7,0,7,6" LastChildFill="True">
+              <ComboBox x:Name="UiLanguage" DockPanel.Dock="Right" AutomationProperties.AutomationId="Language"
+                        AutomationProperties.Name="{DynamicResource Strings.Language}" MinHeight="29" Width="167"/>
+              <TextBlock Text="{DynamicResource Strings.Language}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Border Style="{StaticResource Line}" Margin="6,0,6,6"/>
             <UniformGrid x:Name="ThemeOptions" Rows="1" Columns="4"/>
             <StackPanel x:Name="CustomColors" Visibility="Collapsed">
               <Border Style="{StaticResource Line}" Margin="6,6"/>
               <UniformGrid x:Name="ColorFields" Rows="1" Columns="3" Margin="4,0,4,4"/>
             </StackPanel>
+            <Border Style="{StaticResource Line}"/>
+            <CheckBox x:Name="LiquidGlass" AutomationProperties.AutomationId="LiquidGlass"
+                      Content="{DynamicResource Strings.LiquidGlass}" ToolTip="{DynamicResource Strings.LiquidGlassHint}"/>
           </StackPanel>
         </Border>
-        <TextBlock Style="{StaticResource Section}" Text="Dock"/>
+        <TextBlock Style="{StaticResource Section}" Text="{DynamicResource Strings.Dock}"/>
         <Border Style="{StaticResource Group}"><StackPanel>
           <Grid Height="44" Margin="14,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="56"/></Grid.ColumnDefinitions>
-            <TextBlock Text="Размер значков" VerticalAlignment="Center"/>
-            <Slider x:Name="DockSize" Grid.Column="1" AutomationProperties.AutomationId="DockSize" AutomationProperties.Name="Размер Dock" VerticalAlignment="Center" Minimum="28" Maximum="80" TickFrequency="2" IsSnapToTickEnabled="True" SmallChange="2" LargeChange="8"/>
+            <TextBlock Text="{DynamicResource Strings.IconSize}" VerticalAlignment="Center"/>
+            <Slider x:Name="DockSize" Grid.Column="1" AutomationProperties.AutomationId="DockSize" AutomationProperties.Name="{DynamicResource Strings.DockSize}" VerticalAlignment="Center" Minimum="28" Maximum="80" TickFrequency="2" IsSnapToTickEnabled="True" SmallChange="2" LargeChange="8"/>
             <TextBlock x:Name="SizeValue" Grid.Column="2" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
           </Grid>
           <Border Style="{StaticResource Line}"/>
-          <CheckBox x:Name="Magnify" AutomationProperties.AutomationId="Magnify" Content="Увеличивать значки при наведении"/>
+          <CheckBox x:Name="Magnify" AutomationProperties.AutomationId="Magnify" Content="{DynamicResource Strings.Magnify}"/>
           <Border Style="{StaticResource Line}"/>
-          <CheckBox x:Name="HideDockWhenCovered" AutomationProperties.AutomationId="HideDockWhenCovered" Content="Скрывать Dock в развёрнутых окнах"
-                    ToolTip="Скрывать Dock при развёрнутом или полноэкранном окне. У нижнего края экрана Dock появится снова."/>
+          <CheckBox x:Name="HideDockWhenCovered" AutomationProperties.AutomationId="HideDockWhenCovered" Content="{DynamicResource Strings.AutoHide}"
+                    ToolTip="{DynamicResource Strings.AutoHideHint}"/>
           <StackPanel x:Name="MonitorRow"><Border Style="{StaticResource Line}"/>
             <DockPanel Margin="14,7" LastChildFill="True">
-              <ComboBox x:Name="DockMonitor" DockPanel.Dock="Right" AutomationProperties.AutomationId="DockMonitor" AutomationProperties.Name="Показывать Dock на экране" MinHeight="29" MinWidth="167" MaxWidth="240"/>
-              <TextBlock Text="Показывать на экране" Margin="0,0,12,0" VerticalAlignment="Center"/>
+              <ComboBox x:Name="DockMonitor" DockPanel.Dock="Right" AutomationProperties.AutomationId="DockMonitor" AutomationProperties.Name="{DynamicResource Strings.DockMonitor}" MinHeight="29" MinWidth="167" MaxWidth="240"/>
+              <TextBlock Text="{DynamicResource Strings.ShowOn}" Margin="0,0,12,0" VerticalAlignment="Center"/>
             </DockPanel>
           </StackPanel>
         </StackPanel></Border>
-        <TextBlock Style="{StaticResource Section}" Text="Рабочий стол"/>
+        <TextBlock Style="{StaticResource Section}" Text="{DynamicResource Strings.Desktop}"/>
         <Border Style="{StaticResource Group}"><StackPanel>
-          <CheckBox x:Name="ReplaceTaskbar" AutomationProperties.AutomationId="ReplaceTaskbar" Content="Заменять панель задач"/>
+          <CheckBox x:Name="ReplaceTaskbar" AutomationProperties.AutomationId="ReplaceTaskbar" Content="{DynamicResource Strings.ReplaceTaskbar}"/>
           <Border Style="{StaticResource Line}"/>
-          <CheckBox x:Name="HideWindowsStart" AutomationProperties.AutomationId="HideWindowsStart" Content="Открывать Пуск Dock вместо меню Windows"
-                    ToolTip="В обычном режиме кнопка «Пуск» на панели Windows открывает меню Dock. В пробном режиме выбор сохраняется для пробного профиля."/>
+          <CheckBox x:Name="HideWindowsStart" AutomationProperties.AutomationId="HideWindowsStart" Content="{DynamicResource Strings.ReplaceStart}"
+                    ToolTip="{DynamicResource Strings.ReplaceStartHint}"/>
           <Border Style="{StaticResource Line}"/>
-          <CheckBox x:Name="Startup" AutomationProperties.AutomationId="Startup" Content="Запускать при входе в Windows"/>
+          <CheckBox x:Name="Startup" AutomationProperties.AutomationId="Startup" Content="{DynamicResource Strings.Startup}"/>
+        </StackPanel></Border>
+        <TextBlock Style="{StaticResource Section}" Text="{DynamicResource Strings.About}"/>
+        <Border Style="{StaticResource Group}"><StackPanel>
+          <WrapPanel Margin="14,9,14,5">
+            <TextBlock x:Name="CurrentVersion" AutomationProperties.AutomationId="CurrentVersion" Margin="0,0,11,0" VerticalAlignment="Center"/>
+            <Button x:Name="ProjectLink" AutomationProperties.AutomationId="ProjectLink" Style="{StaticResource VersionLink}"
+                    Content="{DynamicResource Strings.ProjectLink}"/>
+          </WrapPanel>
+          <Button x:Name="ReleaseLink" AutomationProperties.AutomationId="ReleaseLink" Style="{StaticResource VersionLink}"
+                  Margin="10,0,14,6" Visibility="Collapsed"/>
+          <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="ShowUpdateBadge" AutomationProperties.AutomationId="ShowUpdateBadge"
+                    Content="{DynamicResource Strings.ShowUpdateBadge}"/>
+          <Border Style="{StaticResource Line}"/>
+          <StackPanel Margin="14,11,14,12">
+            <TextBlock x:Name="SupportTitle" AutomationProperties.AutomationId="SupportTitle"
+                       Text="{DynamicResource Strings.SupportTitle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock x:Name="SupportDescription" AutomationProperties.AutomationId="SupportDescription"
+                       Text="{DynamicResource Strings.SupportDescription}" TextWrapping="Wrap" Margin="0,5,0,7"/>
+            <TextBlock TextWrapping="Wrap">
+              <Hyperlink x:Name="SupportLink" AutomationProperties.AutomationId="SupportLink"
+                         AutomationProperties.Name="{DynamicResource Strings.SupportLink}" Foreground="{DynamicResource Accent}"
+                         NavigateUri="https://pay.cloudtips.ru/p/894f4248" ToolTip="{Binding NavigateUri.AbsoluteUri, RelativeSource={RelativeSource Self}}">
+                <Run Text="{DynamicResource Strings.SupportLink}"/>
+              </Hyperlink>
+            </TextBlock>
+          </StackPanel>
         </StackPanel></Border>
       </StackPanel></ScrollViewer>
     </Grid>

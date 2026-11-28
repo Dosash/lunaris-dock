@@ -44,8 +44,9 @@ namespace Lunaris
         internal static BitmapSource Capture(Rect rect, double scale)
         {
             if (!Enabled() || rect.IsEmpty) return null;
-            int width = Math.Max(2, (int)Math.Ceiling(rect.Width / (10 * scale)));
-            int height = Math.Max(2, (int)Math.Ceiling(rect.Height / (10 * scale)));
+            double step = (Appearance.Glass == null ? 10 : 6) * scale;
+            int width = Math.Max(2, (int)Math.Ceiling(rect.Width / step));
+            int height = Math.Max(2, (int)Math.Ceiling(rect.Height / step));
             IntPtr screen = GetDC(IntPtr.Zero);
             if (screen == IntPtr.Zero) return null;
             try {
@@ -67,7 +68,7 @@ namespace Lunaris
                     }
                     finally { small.UnlockBits(data); }
                     var blurred = new byte[pixels.Length];
-                    // Eight-by-eight neighborhoods blend roughly 80 DIP of the real backdrop.
+                    // A weighted neighbourhood blurs the retained, downsampled backdrop.
                     for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
                         int blue = 0, green = 0, red = 0, weight = 0;
                         for (int j = Math.Max(0, y - 4); j <= Math.Min(height - 1, y + 4); j++)
@@ -88,6 +89,42 @@ namespace Lunaris
             }
             catch (ExternalException) { return null; }
             finally { ReleaseDC(IntPtr.Zero, screen); }
+        }
+
+        // Refract the existing blurred sample along the inward normal of the pane's
+        // rounded edge. The centre stays flat. No second desktop capture is needed.
+        internal static BitmapSource Refract(BitmapSource backdrop)
+        {
+            int width = backdrop.PixelWidth, height = backdrop.PixelHeight, stride = width * 4;
+            var source = new byte[height * stride];
+            backdrop.CopyPixels(source, stride, 0);
+            var output = (byte[])source.Clone();
+            double radius = Math.Min(4, Math.Min(width, height) * .5);
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                double dx = x + .5 - width * .5, dy = y + .5 - height * .5;
+                double ox = Math.Max(0, Math.Abs(dx) - (width * .5 - radius));
+                double oy = Math.Max(0, Math.Abs(dy) - (height * .5 - radius));
+                double arc = Math.Sqrt(ox * ox + oy * oy);
+                if (arc == 0) continue;
+                double slope = Math.Min(1, arc / radius);
+                double displacement = 1.6 * radius * slope * slope / arc;
+                double sx = Math.Min(width - 1, Math.Max(0, x - Math.Sign(dx) * ox * displacement));
+                double sy = Math.Min(height - 1, Math.Max(0, y - Math.Sign(dy) * oy * displacement));
+                int left = (int)sx, top = (int)sy;
+                int right = Math.Min(width - 1, left + 1), bottom = Math.Min(height - 1, top + 1);
+                double fx = sx - left, fy = sy - top;
+                for (int c = 0; c < 3; c++)
+                {
+                    double upper = source[top * stride + left * 4 + c] * (1 - fx) + source[top * stride + right * 4 + c] * fx;
+                    double lower = source[bottom * stride + left * 4 + c] * (1 - fx) + source[bottom * stride + right * 4 + c] * fx;
+                    output[y * stride + x * 4 + c] = (byte)Math.Round(upper * (1 - fy) + lower * fy);
+                }
+            }
+            var result = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, output, stride);
+            result.Freeze();
+            return result;
         }
 
         internal static bool ButtonsDown()

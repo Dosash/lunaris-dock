@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
@@ -24,8 +25,6 @@ namespace Lunaris
         internal Preferences(DesktopUi ui)
         {
             this.ui = ui;
-            Title = "Lunaris — Настройки";
-            Visuals.Identify(this, "Settings", Title);
             WindowStyle = WindowStyle.None;
             AllowsTransparency = true;
             Background = Brushes.Transparent;
@@ -40,16 +39,27 @@ namespace Lunaris
             view.RenderTransform = lift;
             monitors = Part<ComboBox>("DockMonitor");
             monitorChoice = ui.Settings.Monitor;
+            var languages = Part<ComboBox>("UiLanguage");
+            for (int i = 0; i < Loc.Codes.Length; ++i)
+            {
+                string code = Loc.Codes[i], name = Loc.Names[i];
+                var item = new ComboBoxItem { Tag = code, Content = name };
+                Visuals.Identify(item, "Language." + code, name);
+                languages.Items.Add(item);
+                if (code == ui.Settings.Language) languages.SelectedItem = item;
+            }
+            languages.SelectionChanged += delegate {
+                var item = languages.SelectedItem as ComboBoxItem;
+                if (item != null) ui.ChangeLanguage((string)item.Tag);
+            };
             ApplyTheme();
             var options = Part<Panel>("ThemeOptions");
             foreach (var mode in new[] { "system", "light", "dark", "custom" })
             {
-                string label = mode == "system" ? "Системная" : mode == "light" ? "Светлая" : mode == "dark" ? "Тёмная" : "Своя";
                 var choice = new RadioButton {
                     GroupName = "Theme", Tag = mode, Style = (Style)view.FindResource("ThemeChoice"),
-                    IsChecked = mode == ui.Settings.Theme, Content = ThemeExample(mode, label)
+                    IsChecked = mode == ui.Settings.Theme
                 };
-                Visuals.Identify(choice, "Theme." + Char.ToUpperInvariant(mode[0]) + mode.Substring(1), label);
                 if (mode == "custom") customChoice = choice;
                 choice.Checked += delegate {
                     if (ui.Settings.Theme == mode) return;
@@ -58,17 +68,16 @@ namespace Lunaris
                 };
                 options.Children.Add(choice);
             }
-            BuildColorEditor();
-            UpdateColorEditor();
             var size = Part<Slider>("DockSize");
             var reading = Part<TextBlock>("SizeValue");
             size.Value = ui.Settings.Size;
-            reading.Text = Math.Round(size.Value) + " пт";
             size.ValueChanged += delegate {
-                reading.Text = Math.Round(size.Value) + " пт";
+                reading.Text = Loc.Format("SizePoints", Math.Round(size.Value));
                 ui.ResizeDock(size.Value);
             };
             BindSwitch("Magnify", () => ui.Settings.Magnify, v => ui.Settings.Magnify = v);
+            BindSwitch("LiquidGlass", () => ui.Settings.LiquidGlass, v => ui.Settings.LiquidGlass = v);
+            BindSwitch("ShowUpdateBadge", () => ui.Settings.ShowUpdateBadge, v => ui.Settings.ShowUpdateBadge = v);
             BindSwitch("HideDockWhenCovered", () => ui.Settings.HideDockWhenCovered, v => ui.Settings.HideDockWhenCovered = v);
             BindSwitch("Startup", () => ui.Settings.Startup, v => ui.Settings.Startup = v);
             BindSwitch("ReplaceTaskbar", () => ui.Settings.ReplaceTaskbar, v => ui.Settings.ReplaceTaskbar = v);
@@ -79,13 +88,22 @@ namespace Lunaris
                 monitorChoice = ui.Settings.Monitor = (string)item.Tag;
                 ui.Changed();
             };
-            RefreshMonitors();
+            ApplyLanguage();
+            Part<Button>("ProjectLink").Click += delegate { OpenLink(ReleaseUpdates.ProjectUrl); };
+            Part<Hyperlink>("SupportLink").RequestNavigate += (sender, e) => {
+                e.Handled = true;
+                OpenLink(e.Uri.AbsoluteUri);
+            };
+            Part<Button>("ReleaseLink").Click += delegate {
+                var release = ui.AvailableUpdate;
+                if (release != null) OpenLink(release.Url);
+            };
             Part<Button>("CloseSettings").Click += delegate { Close(); };
             Part<Grid>("Toolbar").MouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e) {
                 if (e.LeftButton == MouseButtonState.Pressed) DragMove();
             };
             PreviewKeyDown += delegate(object s, KeyEventArgs e) {
-                if (e.Key == Key.Escape && !monitors.IsDropDownOpen) { e.Handled = true; Close(); }
+                if (e.Key == Key.Escape && !monitors.IsDropDownOpen && !languages.IsDropDownOpen) { e.Handled = true; Close(); }
             };
             SourceInitialized += delegate { Visuals.ToolWindow(this, false); PositionOnMonitor(); };
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) {
@@ -141,7 +159,7 @@ namespace Lunaris
             view.BeginAnimation(OpacityProperty, fade);
         }
 
-        private T Part<T>(string name) where T : FrameworkElement { return (T)view.FindName(name); }
+        private T Part<T>(string name) where T : DependencyObject { return (T)view.FindName(name); }
 
         private void BindSwitch(string name, Func<bool> read, Action<bool> update)
         {
@@ -187,12 +205,61 @@ namespace Lunaris
         {
             Resources["Ink"] = Appearance.Text; Resources["Muted"] = Appearance.Muted;
             Resources["Surface"] = Appearance.Surface; Resources["Panel"] = Appearance.Panel;
+            var material = Appearance.Glass;
+            Resources["WindowSurface"] = material == null ? (Brush)Appearance.Surface : material.Pane;
+            Resources["WindowRim"] = material == null ? (Brush)Appearance.Border : material.Rim;
+            Resources["GroupSurface"] = material == null ? (Brush)Appearance.Panel : material.Group;
             Resources["Rule"] = Appearance.Border; Resources["Accent"] = Appearance.Accent;
             Resources["Tint"] = Appearance.Selection;
             Resources["Track"] = Appearance.Custom ? Appearance.Muted : Visuals.Brush(Appearance.Dark ? "#657081" : "#929DAA");
             Resources["On"] = Appearance.Custom ? Appearance.Accent : Visuals.Brush(Appearance.Dark ? "#0F81DE" : "#1973C4");
             Foreground = Appearance.Text;
             if (customChoice != null) UpdateColorEditor();
+        }
+
+        internal void ApplyLanguage()
+        {
+            Language = XmlLanguage.GetLanguage(Loc.Language);
+            Title = Loc.Get("SettingsTitle");
+            Visuals.Identify(this, "Settings", Title);
+            foreach (var entry in Loc.Strings) Resources["Strings." + entry.Key] = entry.Value;
+            foreach (RadioButton choice in Part<Panel>("ThemeOptions").Children)
+            {
+                var mode = (string)choice.Tag;
+                string label = Loc.Get("Theme." + mode);
+                choice.Content = ThemeExample(mode, label);
+                Visuals.Identify(choice, "Theme." + Char.ToUpperInvariant(mode[0]) + mode.Substring(1), label);
+            }
+            Part<Panel>("ColorFields").Children.Clear();
+            BuildColorEditor();
+            UpdateColorEditor();
+            Part<TextBlock>("SizeValue").Text = Loc.Format("SizePoints", Math.Round(ui.Settings.Size));
+            RefreshUpdates();
+            RefreshMonitors();
+        }
+
+        internal void RefreshUpdates()
+        {
+            var release = ui.AvailableUpdate;
+            Part<TextBlock>("CurrentVersion").Text = Loc.Format("CurrentVersion", ReleaseUpdates.CurrentVersion);
+            Part<Button>("ProjectLink").ToolTip = ReleaseUpdates.ProjectUrl;
+            var link = Part<Button>("ReleaseLink");
+            link.Content = release == null ? null : Loc.Format("ReleaseLink", release.Version);
+            link.ToolTip = release == null ? null : release.Url;
+            link.Visibility = release == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void OpenLink(string url)
+        {
+            try
+            {
+                using (System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })) { }
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException)) throw;
+                MessageBox.Show(this, Loc.Get("LinkError") + "\n\n" + ex.Message, "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
 
         internal void RefreshMonitors()
@@ -203,10 +270,10 @@ namespace Lunaris
                 var screens = ui.Monitors;
                 monitors.Items.Clear();
                 Part<Panel>("MonitorRow").Visibility = screens.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
-                AddMonitor("Основной экран", "primary", "Monitor.primary");
+                AddMonitor(Loc.Get("MainDisplay"), "primary", "Monitor.primary");
                 for (int i = 0; i < screens.Length; i++)
                     AddMonitor(screens[i].Label, screens[i].Id, "Monitor." + i);
-                AddMonitor("Все экраны", "all", "Monitor.all");
+                AddMonitor(Loc.Get("AllDisplays"), "all", "Monitor.all");
                 monitors.SelectedItem = monitors.Items.Cast<ComboBoxItem>().FirstOrDefault(
                     m => String.Equals((string)m.Tag, monitorChoice, StringComparison.OrdinalIgnoreCase)) ?? monitors.Items[0];
             }
@@ -230,7 +297,8 @@ namespace Lunaris
         {
             var area = screen.WorkArea;
             double width = Math.Min(506, area.Width / screen.Scale);
-            double preferred = (ui.Monitors.Length > 1 ? 652 : 609) + (ui.Settings.Theme == "custom" ? 74 : 0);
+            double preferred = (ui.Monitors.Length > 1 ? 736 : 693) + (ui.Settings.Theme == "custom" ? 74 : 0)
+                + 225 + (ui.AvailableUpdate == null ? 0 : 32);
             double height = Math.Min(preferred, area.Height / screen.Scale);
             Width = width; Height = height;
             double w = Math.Round(width * screen.Scale), h = Math.Round(height * screen.Scale);

@@ -141,6 +141,10 @@ namespace Lunaris
         public List<AppEntry> GetApplications() { return catalog.Read(); }
         public List<WindowEntry> GetWindows() { return windows.Read(); }
         public AppEntry ResolveApp(string id) { return catalog.Resolve(id); }
+        internal AppEntry ResolveExecutablePin(string path) { return catalog.ResolveExecutablePin(path); }
+        internal string PinIdentity(string pin) { return catalog.PinIdentity(pin); }
+        internal string PinTarget(string id) { return catalog.PinTarget(id); }
+        internal string[] ResolveDrop(string[] files) { return catalog.ResolveDrop(files); }
         public void Launch(AppEntry app) { catalog.Launch(app); }
         public void Activate(WindowEntry window) { if (window != null) WindowList.Focus(window.Handle); }
         public void FocusWindow(IntPtr hwnd) { WindowList.Focus(hwnd); }

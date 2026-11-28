@@ -10,7 +10,7 @@ param(
     [switch]$CaptureFolder
 )
 $ErrorActionPreference = 'Stop'
-if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.0\LunarisDock-Portable\LunarisDock.exe' }
+if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.1\LunarisDock-Portable\LunarisDock.exe' }
 if (!$OutDir) { $OutDir = Join-Path $PSScriptRoot '..\build\test-results' }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $arguments = @((Resolve-Path -LiteralPath $ExePath).Path)

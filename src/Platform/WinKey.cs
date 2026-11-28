@@ -62,7 +62,7 @@ namespace Lunaris
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
             started.WaitOne();
-            if (startError != null) throw new InvalidOperationException("Не удалось подключить клавишу Win.", startError);
+            if (startError != null) throw new InvalidOperationException(Loc.Get("WinKeyError"), startError);
         }
 
         private void Pump()

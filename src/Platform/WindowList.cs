@@ -53,7 +53,7 @@ namespace Lunaris
                     }, IntPtr.Zero);
                 }
                 AppEntry app = catalog.Match(windowId, processId, path);
-                if (app != null) list.Add(new WindowEntry { Handle = window, Title = title.ToString(), AppId = app.Id, App = app });
+                if (app != null) list.Add(new WindowEntry { Handle = window, Title = title.ToString(), AppId = app.Id, App = app, ProcessPath = path });
                 return true;
             }, IntPtr.Zero);
             return list;

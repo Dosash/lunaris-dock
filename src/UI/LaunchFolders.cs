@@ -38,20 +38,20 @@ namespace Lunaris
         {
             var names = new Stack<string>();
             for (var node = library.Find(id); node != null; node = library.Find(node.ParentId)) names.Push(node.Name);
-            return names.Count == 0 ? "Приложения" : String.Join(" › ", names);
+            return names.Count == 0 ? Loc.Get("Apps") : String.Join(" › ", names);
         }
 
         private void UpdateFolderHeader()
         {
             bool atRoot = folderId == LaunchLibrary.Root;
-            title.Text = search.Text.Trim().Length > 0 ? "Поиск" : atRoot ? "Приложения" : library.Find(folderId).Name;
+            title.Text = search.Text.Trim().Length > 0 ? Loc.Get("Search") : atRoot ? Loc.Get("Apps") : library.Find(folderId).Name;
             title.ToolTip = atRoot ? null : Visuals.Tip(FolderPath(folderId));
             AutomationProperties.SetName(title, title.Text);
             bool inside = !atRoot && !globalQuery;
             breadcrumb.Visibility = inside ? Visibility.Visible : Visibility.Collapsed;
             if (inside) {
                 string parent = ParentFolder();
-                breadcrumb.Text = parent == LaunchLibrary.Root ? "Приложения" : "Приложения › " + FolderPath(parent);
+                breadcrumb.Text = parent == LaunchLibrary.Root ? Loc.Get("Apps") : Loc.Get("Apps") + " › " + FolderPath(parent);
                 breadcrumb.ToolTip = Visuals.Tip(breadcrumb.Text);
             }
             navigationLogo.Visibility = atRoot ? Visibility.Visible : Visibility.Collapsed;
@@ -126,16 +126,16 @@ namespace Lunaris
         {
             if (library == null) return;
             string destination = BrowsingFolder ? folderId : LaunchLibrary.Root;
-            LibraryAction(menu, "Launchpad.Action.CreateFolder", "Новая папка…", delegate { EditFolderName(null, destination); });
+            LibraryAction(menu, "Launchpad.Action.CreateFolder", Loc.Get("NewFolderMenu"), delegate { EditFolderName(null, destination); });
             if (!BrowsingFolder) return;
             if (folderId != LaunchLibrary.Root)
-                LibraryAction(menu, "Launchpad.Folder.AddApps", "Добавить приложения…", delegate { AddApps(destination); });
+                LibraryAction(menu, "Launchpad.Folder.AddApps", Loc.Get("AddAppsMenu"), delegate { AddApps(destination); });
             bool manual = library.ManualOrder(destination);
             string selectedId = results.Count > 0 ? results[selected].Id : null;
-            var alpha = LibraryAction(menu, "Launchpad.Sort.Alphabetical", "По алфавиту", delegate {
+            var alpha = LibraryAction(menu, "Launchpad.Sort.Alphabetical", Loc.Get("SortAZ"), delegate {
                 if (library.SortByName(destination)) SaveLibrary(selectedId);
             });
-            var hand = LibraryAction(menu, "Launchpad.Sort.Manual", "Вручную", delegate {
+            var hand = LibraryAction(menu, "Launchpad.Sort.Manual", Loc.Get("SortManual"), delegate {
                 if (library.SetManualOrder(destination)) SaveLibrary(selectedId);
             });
             alpha.IsCheckable = hand.IsCheckable = true;
@@ -161,26 +161,26 @@ namespace Lunaris
                 menu.Items.Clear();
                 if (item.IsFolder)
                 {
-                    LibraryAction(menu, "Launchpad.Folder.Open", "Открыть папку", delegate { OpenItem(item); });
-                    LibraryAction(menu, "Launchpad.Folder.AddApps", "Добавить приложения…", delegate { AddApps(item.Id); });
+                    LibraryAction(menu, "Launchpad.Folder.Open", Loc.Get("OpenFolder"), delegate { OpenItem(item); });
+                    LibraryAction(menu, "Launchpad.Folder.AddApps", Loc.Get("AddAppsMenu"), delegate { AddApps(item.Id); });
                     if (!item.IsSystem)
                     {
-                        LibraryAction(menu, "Launchpad.Folder.Rename", "Переименовать…", delegate { EditFolderName(item, item.ParentId); });
-                        LibraryAction(menu, "Launchpad.Folder.Remove", "Удалить папку и вернуть содержимое", delegate { RemoveFolder(item); });
+                        LibraryAction(menu, "Launchpad.Folder.Rename", Loc.Get("RenameMenu"), delegate { EditFolderName(item, item.ParentId); });
+                        LibraryAction(menu, "Launchpad.Folder.Remove", Loc.Get("RemoveFolder"), delegate { RemoveFolder(item); });
                     }
                 }
                 else
                 {
-                    LibraryAction(menu, "Launchpad.Item.Pin", ui.Pinned(item.App.Id) ? "Открепить от Dock" : "Закрепить в Dock",
+                    LibraryAction(menu, "Launchpad.Item.Pin", ui.Pinned(item.App.Id) ? Loc.Get("Unpin") : Loc.Get("Pin"),
                         delegate { ui.TogglePin(item.App); RefreshCatalog(); });
                 }
                 if (library.Find(item.Id) == null) return;
                 menu.Items.Add(new Separator());
-                LibraryAction(menu, "Launchpad.Item.Move", "Переместить в папку…", delegate { MovePicker(item); });
+                LibraryAction(menu, "Launchpad.Item.Move", Loc.Get("MoveToFolderMenu"), delegate { MovePicker(item); });
                 if (!BrowsingFolder) return;
                 int index = results.FindIndex(node => DesktopUi.IdEqual(node.Id, item.Id));
-                var earlier = LibraryAction(menu, "Launchpad.Item.Earlier", "Переместить раньше", delegate { ShiftItem(item, -1); });
-                var later = LibraryAction(menu, "Launchpad.Item.Later", "Переместить позже", delegate { ShiftItem(item, 1); });
+                var earlier = LibraryAction(menu, "Launchpad.Item.Earlier", Loc.Get("MoveEarlier"), delegate { ShiftItem(item, -1); });
+                var later = LibraryAction(menu, "Launchpad.Item.Later", Loc.Get("MoveLater"), delegate { ShiftItem(item, 1); });
                 earlier.IsEnabled = index > 0;
                 later.IsEnabled = index >= 0 && index < results.Count - 1;
             };

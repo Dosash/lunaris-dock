@@ -6,7 +6,7 @@ param(
     [switch]$NativeStart
 )
 $ErrorActionPreference = 'Stop'
-if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.0\LunarisDock-Portable\LunarisDock.exe' }
+if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.1\LunarisDock-Portable\LunarisDock.exe' }
 . "$PSScriptRoot\Lab.ps1"
 Assert-LabAccount $ExpectedUserSid
 $exe = (Resolve-Path -LiteralPath $ExePath).Path
@@ -27,7 +27,7 @@ function Send-Chord([byte[]]$Keys) {
 }
 function Start-ShellTest {
     $d = Start-Process $exe -PassThru
-    Wait-Observed { (Get-LabWindow 'Lunaris Dock' $d) -ne [IntPtr]::Zero -and ![LunarisLab]::BarVisible() } 'replacement Dock appeared and hid Explorer taskbar'
+    Wait-Observed { (Get-LabWindow 'Dock' $d) -ne [IntPtr]::Zero -and ![LunarisLab]::BarVisible() } 'replacement Dock appeared and hid Explorer taskbar'
     return $d
 }
 function Assert-Restored {
@@ -42,9 +42,9 @@ try {
     $dock = Start-ShellTest
     foreach ($vk in 0x5b,0x5c) {
         Send-Chord @($vk)
-        Wait-Observed { (Get-LabWindow 'Lunaris — Пуск' $dock) -ne [IntPtr]::Zero } "single Win $vk opens Launchpad"
+        Wait-Observed { (Get-LabWindow 'Launchpad' $dock) -ne [IntPtr]::Zero } "single Win $vk opens Launchpad"
         Send-Chord @($vk)
-        Wait-Observed { (Get-LabWindow 'Lunaris — Пуск' $dock) -eq [IntPtr]::Zero } "repeated Win $vk dismisses Launchpad"
+        Wait-Observed { (Get-LabWindow 'Launchpad' $dock) -eq [IntPtr]::Zero } "repeated Win $vk dismisses Launchpad"
     }
     if ($NativeStart) {
         # Ctrl+Esc is a native Start gesture independent of either bare Windows key.
@@ -57,14 +57,14 @@ try {
         Close-LabSettings $prefs $dock
         Send-Chord @(0x11,0x1b)
         Wait-Observed {
-            (Get-LabWindow 'Lunaris — Пуск' $dock) -ne [IntPtr]::Zero -and
+            (Get-LabWindow 'Launchpad' $dock) -ne [IntPtr]::Zero -and
             [LunarisLab]::Owner([LunarisLab]::GetForegroundWindow()) -eq $dock.Id
         } 'enabling native Start redirection routes Ctrl+Esc to the foreground Dock Launchpad'
         $prefs = Open-LabSettings $exe $dock
         Set-LabToggle $prefs 'HideWindowsStart' $false
         Close-LabSettings $prefs $dock
         Send-Chord @(0x11,0x1b)
-        Wait-Observed { (Test-NativeStartForeground) -and (Get-LabWindow 'Lunaris — Пуск' $dock) -eq [IntPtr]::Zero } 'disabling redirection restores Ctrl+Esc to native Start'
+        Wait-Observed { (Test-NativeStartForeground) -and (Get-LabWindow 'Launchpad' $dock) -eq [IntPtr]::Zero } 'disabling redirection restores Ctrl+Esc to native Start'
         Send-Chord @(0x1b)
     }
     Send-Chord @(0x5b,0x52)

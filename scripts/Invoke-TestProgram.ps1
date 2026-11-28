@@ -12,7 +12,7 @@ New-Item -ItemType Directory $temp | Out-Null
 $output = Join-Path $temp 'LunarisTest.exe'
 try {
     $refs = @("/reference:$exe")
-    foreach ($dll in 'System','System.Core','System.Xml','System.Xaml','System.Runtime.Serialization','System.Windows.Forms','System.Drawing','Microsoft.CSharp') {
+    foreach ($dll in 'System','System.Core','System.Net.Http','System.Xml','System.Xaml','System.Runtime.Serialization','System.Windows.Forms','System.Drawing','Microsoft.CSharp') {
         $refs += "/reference:$framework\$dll.dll"
     }
     foreach ($dll in 'PresentationCore','PresentationFramework','WindowsBase','UIAutomationClient','UIAutomationTypes') {

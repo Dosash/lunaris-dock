@@ -113,6 +113,7 @@ internal static class PreviewTests
         if (dock == null || dock.HasExited) return;
         Command("--exit");
         if (!dock.WaitForExit(4000)) throw new Exception("Dock did not exit");
+        if (dock.ExitCode != 0) throw new Exception("Dock exited with code " + dock.ExitCode);
     }
     static Point Center(AE el, double fraction)
     {
@@ -408,7 +409,7 @@ internal static class PreviewTests
     {
         var bar=Reveal(screen);
         Click(Find(bar,AE.AutomationIdProperty,"OpenLaunchpad"),true);
-        Click(WaitFor(()=>Menu("Настройки…"),"Dock context menu exposes settings"),false);
+        Click(Action("Dock.Settings"),false);
         return WaitFor(()=>Window("Settings"),"settings window opened");
     }
     static void StableDock(Screen monitor,string label)
@@ -431,18 +432,21 @@ internal static class PreviewTests
         var toggle=(TogglePattern)element.GetCurrentPattern(TogglePattern.Pattern);
         if((toggle.Current.ToggleState==ToggleState.On)!=value) toggle.Toggle();
     }
-    static void SelectMonitor(Screen from,string choice)
+    static void SelectOption(AE combo, string choice)
     {
-        var settings=OpenSettings(from);
-        var combo=Find(settings,AE.AutomationIdProperty,"DockMonitor");
         var list=(ExpandCollapsePattern)combo.GetCurrentPattern(ExpandCollapsePattern.Pattern);
         list.Expand();
         var option=WaitFor(()=>Roots().SelectMany(r=>r.FindAll(Desc,new PropertyCondition(AE.AutomationIdProperty,choice)).Cast<AE>())
             .FirstOrDefault(e=>!e.Current.IsOffscreen && e.Current.BoundingRectangle.Width>2 &&
                    e.Current.BoundingRectangle.Height>2 && Owner(WindowFromPoint(Center(e,.5)))==dock.Id),
-            "selectable monitor mode " + choice);
+            "visible dropdown choice " + choice);
         Click(option,false);
         if(list.Current.ExpandCollapseState==ExpandCollapseState.Expanded) list.Collapse();
+    }
+    static void SelectMonitor(Screen from,string choice)
+    {
+        var settings=OpenSettings(from);
+        SelectOption(Find(settings,AE.AutomationIdProperty,"DockMonitor"),choice);
         Until(delegate {
             string selected=SettingsStore.Load().Monitor;
             return Window("Settings")!=null && (choice=="Monitor.all" ? selected=="all" : choice=="Monitor.primary" ? selected=="primary" :
@@ -502,9 +506,26 @@ internal static class PreviewTests
         var option=Find(settings,AE.AutomationIdProperty,"Theme."+theme);
         Click(option,false);
     }
+    static void SelectLanguage(AE settings, string code, string title, string start)
+    {
+        int handle = settings.Current.NativeWindowHandle;
+        var combo = Find(settings, AE.AutomationIdProperty, "Language");
+        SelectOption(combo, "Language." + code);
+        Until(delegate {
+            var current = Window("Settings");
+            var button = Find(Window("Dock"), AE.AutomationIdProperty, "OpenLaunchpad");
+            return current != null && current.Current.NativeWindowHandle == handle &&
+                current.Current.Name == "Lunaris — " + title && button != null && button.Current.Name == start &&
+                SettingsStore.Load().Language == code;
+        }, "open settings and Dock switch immediately to " + code);
+    }
+
     static void CheckSettings()
     {
         CheckHover(true);
+        OpenLaunchpad();
+        Keys("{ESC}");
+        Until(() => Window("Launchpad") == null, "Launchpad cached before changing language");
         int initialHeight = DockHeight();
         var settings=OpenSettings(Screen.PrimaryScreen);
         var size = Find(settings, AE.AutomationIdProperty, "DockSize");
@@ -548,9 +569,35 @@ internal static class PreviewTests
         var bounds=settings.Current.BoundingRectangle;
         if(close.X<bounds.Left+bounds.Width*.8 || close.Y>bounds.Top+bounds.Height*.2)
             throw new Exception("Settings close button is not in the upper-right corner.");
+        Toggle(settings,"LiquidGlass",true);
+        Toggle(settings,"ShowUpdateBadge",false);
+        Until(() => SettingsStore.Load().LiquidGlass && SettingsStore.Load().Theme == "custom",
+            "Liquid Glass can be enabled over a custom palette");
+        Until(() => !SettingsStore.Load().ShowUpdateBadge, "release badge preference persists while settings are open");
+        SelectLanguage(settings, "de", "Einstellungen", "Start");
+        SelectLanguage(settings, "es", "Ajustes", "Inicio");
+        SelectLanguage(settings, "zh-CN", "设置", "启动菜单");
+        SelectLanguage(settings, "ru", "Настройки", "Пуск");
+        SelectLanguage(settings, "en", "Settings", "Start");
         CloseSettings(settings);
-        Stop(); Start();
+        var translatedPad = OpenLaunchpad();
+        Until(() => translatedPad.Current.Name == "Lunaris — Start", "reopened Launchpad uses the selected language");
+        Keys("{ESC}");
+        Until(() => Window("Launchpad") == null, "translated Launchpad dismissed");
+        OpenSettings(Screen.PrimaryScreen);
+        Stop();
+        Console.WriteLine("PASS IPC exits cleanly with an open settings window and a cached Launchpad");
+        Start();
         settings=OpenSettings(Screen.PrimaryScreen);
+        var glass = (TogglePattern)Find(settings,AE.AutomationIdProperty,"LiquidGlass").GetCurrentPattern(TogglePattern.Pattern);
+        var badge = (TogglePattern)Find(settings,AE.AutomationIdProperty,"ShowUpdateBadge").GetCurrentPattern(TogglePattern.Pattern);
+        Until(() => badge.Current.ToggleState == ToggleState.Off, "restarted settings restore the release badge preference");
+        Until(() => settings.Current.Name == "Lunaris — Settings" && glass.Current.ToggleState == ToggleState.On,
+            "restart restores the selected language and glass material");
+        SelectLanguage(settings, "ru", "Настройки", "Пуск");
+        Toggle(settings, "LiquidGlass", false);
+        Toggle(settings, "ShowUpdateBadge", true);
+        Until(() => !SettingsStore.Load().LiquidGlass, "standard material restored while settings are open");
         var native=(TogglePattern)Find(settings,AE.AutomationIdProperty,"HideWindowsStart").GetCurrentPattern(TogglePattern.Pattern);
         var restoredSize=(RangeValuePattern)Find(settings,AE.AutomationIdProperty,"DockSize").GetCurrentPattern(RangeValuePattern.Pattern);
         Until(()=>native.Current.ToggleState==ToggleState.On && restoredSize.Current.Value==72,
@@ -989,6 +1036,8 @@ internal static class PreviewTests
             SetProcessDpiAwarenessContext(new IntPtr(-4));
             if(args.Length==2 && args[0]=="--fixtures") { Fixtures(args[1]); return 0; }
             Environment.SetEnvironmentVariable("LUNARIS_PROFILE", profile);
+            // The legacy menu and library assertions exercise the Russian translation on every Windows locale.
+            SettingsStore.Save(new UserSettings { Language = "ru", Monitor = args.Contains("--store-only") ? "all" : "primary" });
             exe=args[0];
             string imageArg=args.FirstOrDefault(arg=>arg.StartsWith("--folder-image=",StringComparison.Ordinal));
             if(imageArg!=null) folderImage=Path.GetFullPath(imageArg.Substring("--folder-image=".Length));
@@ -998,7 +1047,6 @@ internal static class PreviewTests
                 var cursor = Cursor.Position;
                 var foreground = GetForegroundWindow();
                 try {
-                    SettingsStore.Save(new UserSettings { Monitor = "all" });
                     Start();
                     StoreCalculator(Screen.AllScreens.FirstOrDefault(s => !s.Primary) ?? Screen.PrimaryScreen);
                 } finally {

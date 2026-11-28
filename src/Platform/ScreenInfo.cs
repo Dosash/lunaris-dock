@@ -104,14 +104,14 @@ namespace Lunaris
                 var bounds = info.Screen.ToRect();
                 int prefix = info.Device.LastIndexOf("DISPLAY", StringComparison.OrdinalIgnoreCase);
                 string number = prefix >= 0 ? info.Device.Substring(prefix + 7) : (list.Count + 1).ToString();
-                string label = "Экран " + number + " · " + bounds.Width + " × " + bounds.Height;
+                string label = Loc.Format("Display", number, bounds.Width, bounds.Height);
                 list.Add(new ScreenInfo(id, label, (info.Flags & 1) != 0, bounds, info.Work.ToRect(), scale) { Handle = monitor });
                 return true;
             }, IntPtr.Zero);
             if (list.Count == 0)
             {
                 var bounds = new Rect(0, 0, Math.Max(1, GetSystemMetrics(0)), Math.Max(1, GetSystemMetrics(1)));
-                list.Add(new ScreenInfo("fallback", "Основной экран", true, bounds, bounds, 1));
+                list.Add(new ScreenInfo("fallback", Loc.Get("MainDisplay"), true, bounds, bounds, 1));
             }
             list.Sort((a,b) => a.Primary != b.Primary ? (a.Primary ? -1 : 1) : StringComparer.OrdinalIgnoreCase.Compare(a.Label,b.Label));
             return list.ToArray();

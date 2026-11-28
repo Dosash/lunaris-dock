@@ -14,6 +14,8 @@
 !/src/
 !/src/Platform/
 !/src/UI/
+!/src/Languages/
+!/src/Languages/*.txt
 !/src/**/*.cs
 !/src/UI/Preferences.xaml
 !/src/App.config
@@ -23,6 +25,9 @@
 !/scripts/*.ps1
 !/packaging/
 !/packaging/Lunaris.iss
+!/packaging/languages/
+!/packaging/languages/ChineseSimplified.isl
+!/packaging/languages/ChineseSimplified-LICENSE.txt
 !/packaging/portable/
 !/packaging/portable/README.txt
 !/packaging/portable/Тестовый запуск.cmd

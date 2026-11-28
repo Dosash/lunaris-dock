@@ -57,7 +57,8 @@ namespace Lunaris
         internal LaunchSurface(DesktopUi ui)
         {
             this.ui = ui;
-            Title = "Lunaris — Пуск";
+            Language = System.Windows.Markup.XmlLanguage.GetLanguage(Loc.Language);
+            Title = Loc.Get("StartTitle");
             Visuals.Identify(this, "Launchpad", Title);
             FontFamily = UiFonts.Text; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             ShowInTaskbar = false; Topmost = true; UseLayoutRounding = true;
@@ -97,7 +98,7 @@ namespace Lunaris
             }
             header.Children.Add(logo);
             navigationLogo = logo;
-            backButton = Visuals.Button("Launchpad.Folder.Back", "На уровень выше");
+            backButton = Visuals.Button("Launchpad.Folder.Back", Loc.Get("UpLevel"));
             backButton.Width = 29;
             backButton.Margin = new Thickness(0, 0, 4, 0);
             backButton.Content = Glyph("\uE72B", 17);
@@ -107,7 +108,7 @@ namespace Lunaris
             backButton.Drop += delegate(object sender, DragEventArgs e) { DropInto(e, ParentFolder()); };
             backButton.Visibility = Visibility.Collapsed;
             header.Children.Add(backButton);
-            title = Text("Приложения", 24); title.FontFamily = UiFonts.Display; title.FontWeight = FontWeights.Medium;
+            title = Text(Loc.Get("Apps"), 24); title.FontFamily = UiFonts.Display; title.FontWeight = FontWeights.Medium;
             title.TextTrimming = TextTrimming.CharacterEllipsis;
             title.Margin = new Thickness(0, 0, 8, 0);
             Visuals.Identify(title, "Launchpad.Title", title.Text);
@@ -115,7 +116,7 @@ namespace Lunaris
             breadcrumb = Text("", 11);
             breadcrumb.TextTrimming = TextTrimming.CharacterEllipsis;
             breadcrumb.Visibility = Visibility.Collapsed;
-            Visuals.Identify(breadcrumb, "Launchpad.Folder.Path", "Расположение папки");
+            Visuals.Identify(breadcrumb, "Launchpad.Folder.Path", Loc.Get("FolderPath"));
             heading.Children.Add(breadcrumb);
             heading.Children.Add(title);
             Grid.SetColumn(heading,1); header.Children.Add(heading);
@@ -126,14 +127,14 @@ namespace Lunaris
             field.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
             field.ColumnDefinitions.Add(new ColumnDefinition());
             searchGlyph = Glyph("\uE721",12); field.Children.Add(searchGlyph);
-            placeholder = Text("Поиск",13); Grid.SetColumn(placeholder,1); field.Children.Add(placeholder);
+            placeholder = Text(Loc.Get("Search"),13); Grid.SetColumn(placeholder,1); field.Children.Add(placeholder);
             search.FontFamily = UiFonts.Text; search.FontSize = 13; search.Background = Brushes.Transparent;
             search.VerticalContentAlignment = VerticalAlignment.Center; search.BorderThickness = new Thickness(0);
-            search.Padding = new Thickness(0); Visuals.Identify(search,"Search","Поиск приложений");
+            search.Padding = new Thickness(0); Visuals.Identify(search,"Search",Loc.Get("SearchApps"));
             search.MaxLength = 1024;
             Grid.SetColumn(search,1); field.Children.Add(search); searchFrame.Child = field;
             Grid.SetColumn(searchFrame,2); header.Children.Add(searchFrame);
-            more = Visuals.Button("Launchpad.More","Действия"); more.Width = 35; more.Height = 32;
+            more = Visuals.Button("Launchpad.More",Loc.Get("Actions")); more.Width = 35; more.Height = 32;
             more.Margin = new Thickness(7,0,0,0);
             moreCircle.Width = moreCircle.Height = 22; moreCircle.CornerRadius = new CornerRadius(11);
             moreCircle.BorderThickness = new Thickness(1.5);
@@ -154,13 +155,13 @@ namespace Lunaris
             empty = Text("",15); empty.HorizontalAlignment = HorizontalAlignment.Center; empty.TextAlignment = TextAlignment.Center;
             var searchStatus = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             empty.TextWrapping = TextWrapping.Wrap; searchStatus.Children.Add(empty);
-            findFiles = Visuals.Button("Launchpad.FindFiles","Найти файлы в Проводнике");
-            findFiles.Content = new TextBlock { Text = "Найти файлы в Проводнике", Margin = new Thickness(12,6,12,6) };
+            findFiles = Visuals.Button("Launchpad.FindFiles",Loc.Get("FindFiles"));
+            findFiles.Content = new TextBlock { Text = Loc.Get("FindFiles"), Margin = new Thickness(12,6,12,6) };
             findFiles.Margin = new Thickness(0,8,0,0);
             findFiles.Click += delegate { SearchFiles(); };
             searchStatus.Children.Add(findFiles);
-            addToEmptyFolder = Visuals.Button("Launchpad.Folder.AddEmpty","Добавить приложения");
-            addToEmptyFolder.Content = new TextBlock { Text = "Добавить приложения", Margin = new Thickness(12,6,12,6) };
+            addToEmptyFolder = Visuals.Button("Launchpad.Folder.AddEmpty",Loc.Get("AddApps"));
+            addToEmptyFolder.Content = new TextBlock { Text = Loc.Get("AddApps"), Margin = new Thickness(12,6,12,6) };
             addToEmptyFolder.Margin = new Thickness(0,8,0,0);
             addToEmptyFolder.Click += delegate { AddApps(folderId); };
             searchStatus.Children.Add(addToEmptyFolder);
@@ -238,6 +239,26 @@ namespace Lunaris
         {
             shadow.Background = Appearance.Surface;
             shadow.Effect = Visuals.Shadow(15,5,Appearance.Dark ? .52 : .34);
+            var material = Appearance.Glass;
+            if (material != null && LaunchGlass.Enabled())
+            {
+                glass.BorderBrush = material.Rim;
+                if (backdrop == null) { glass.Background = material.Pane; return; }
+                var optics = new DrawingGroup();
+                using (var dc = optics.Open())
+                {
+                    var bounds = new Rect(0, 0, 1, 1);
+                    dc.DrawImage(LaunchGlass.Refract(backdrop), bounds);
+                    dc.PushOpacity(.9);
+                    dc.DrawRectangle(material.Pane, null, bounds);
+                    dc.Pop();
+                }
+                var lens = new DrawingBrush(optics) { Stretch = Stretch.Fill };
+                lens.Freeze();
+                glass.Background = lens;
+                RenderOptions.SetBitmapScalingMode(glass,BitmapScalingMode.HighQuality);
+                return;
+            }
             var rim = new LinearGradientBrush();
             rim.StartPoint = new Point(0,0); rim.EndPoint = new Point(.35,1);
             Color panel = Appearance.Panel.Color, surfaceColor = Appearance.Surface.Color, accent = Appearance.Accent.Color;
@@ -379,16 +400,16 @@ namespace Lunaris
             };
             AddLibraryActions(menu);
             menu.Items.Add(new Separator());
-            add("Explorer","Проводник",delegate {
+            add("Explorer",Loc.Get("Explorer"),delegate {
                 OpenSystem(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"));
             });
-            add("Files","Найти файлы в Проводнике",SearchFiles);
-            add("WindowsSettings","Параметры Windows",delegate { OpenSystem("ms-settings:"); });
-            add("Power","Питание и выход…",OpenPowerDialog);
+            add("Files",Loc.Get("FindFiles"),SearchFiles);
+            add("WindowsSettings",Loc.Get("WindowsSettings"),delegate { OpenSystem("ms-settings:"); });
+            add("Power",Loc.Get("Power"),OpenPowerDialog);
             menu.Items.Add(new Separator());
-            add("DockSettings","Настройки Dock…",ui.OpenPreferences);
-            add("Refresh","Обновить приложения",delegate { ui.ReloadCatalog(); RefreshCatalog(); });
-            var close = Visuals.MenuItem("Закрыть",Dismiss); Visuals.Identify(close,"Launchpad.Close","Закрыть");
+            add("DockSettings",Loc.Get("DockSettingsMenu"),ui.OpenPreferences);
+            add("Refresh",Loc.Get("RefreshApps"),delegate { ui.ReloadCatalog(); RefreshCatalog(); });
+            var close = Visuals.MenuItem(Loc.Get("Close"),Dismiss); Visuals.Identify(close,"Launchpad.Close",Loc.Get("Close"));
             menu.Items.Add(close);
             menu.PlacementTarget = more; menu.Placement = PlacementMode.Bottom; menu.IsOpen = true;
         }
@@ -404,7 +425,7 @@ namespace Lunaris
         {
             Dismiss();
             try { Process.Start(new ProcessStartInfo(command) { UseShellExecute = true }); }
-            catch (Exception ex) { MessageBox.Show("Не удалось открыть приложение.\n\n"+ex.Message,
+            catch (Exception ex) { MessageBox.Show(Loc.Get("OpenAppError")+"\n\n"+ex.Message,
                 "Lunaris Dock",MessageBoxButton.OK,MessageBoxImage.Information); }
         }
 
@@ -423,7 +444,7 @@ namespace Lunaris
                 catch (Exception ex) {
                     string message = ex.Message;
                     if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(new Action(delegate {
-                        MessageBox.Show("Не удалось открыть системный диалог питания.\n\n" + message,
+                        MessageBox.Show(Loc.Get("PowerDialogError") + "\n\n" + message,
                             "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Information);
                     }));
                 }

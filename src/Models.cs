@@ -14,6 +14,8 @@ namespace Lunaris
     public sealed class AppEntry
     {
         public string Id, Name;
+        // A pin imported from Explorer launches this executable even when Id is a registered app.
+        internal string DirectPath;
         public ImageSource Icon;
         public string StartFolder;
         internal Dictionary<string,string> StartFolderNames;
@@ -22,6 +24,7 @@ namespace Lunaris
     public sealed class WindowEntry
     {
         public string AppId, Title;
+        internal string ProcessPath;
         public IntPtr Handle;
         public AppEntry App;
     }
@@ -42,6 +45,9 @@ namespace Lunaris
         [DataMember] public bool HideWindowsStart;
         [DataMember] public bool InitializePins = true;
         [DataMember] public string Theme = "system";
+        [DataMember] public string Language = Loc.DefaultLanguage;
+        [DataMember] public bool LiquidGlass;
+        [DataMember] public bool ShowUpdateBadge = true;
         [DataMember] public string CustomSurface = DefaultCustomSurface;
         [DataMember] public string CustomText = DefaultCustomText;
         [DataMember] public string CustomAccent = DefaultCustomAccent;
@@ -54,7 +60,9 @@ namespace Lunaris
             Size = 48;
             Magnify = true;
             HideDockWhenCovered = true;
+            ShowUpdateBadge = true;
             Theme = "system";
+            Language = Loc.DefaultLanguage;
             CustomSurface = DefaultCustomSurface;
             CustomText = DefaultCustomText;
             CustomAccent = DefaultCustomAccent;
@@ -67,6 +75,7 @@ namespace Lunaris
             if (double.IsNaN(Size) || double.IsInfinity(Size)) Size = 48;
             Size = Math.Max(28, Math.Min(80, Size));
             Theme = NormalizeTheme(Theme);
+            Language = Loc.Normalize(Language);
             CustomSurface = NormalizeColor(CustomSurface, DefaultCustomSurface);
             CustomText = NormalizeColor(CustomText, DefaultCustomText);
             CustomAccent = NormalizeColor(CustomAccent, DefaultCustomAccent);
@@ -128,7 +137,7 @@ namespace Lunaris
                 // D:folder and \folder are relative to process drive state on Windows.
                 if (String.IsNullOrEmpty(root) || !(root.StartsWith(@"\\", StringComparison.Ordinal) ||
                     (root.Length == 3 && root[1] == ':')))
-                    throw new ArgumentException("LUNARIS_PROFILE должен содержать абсолютный путь.");
+                    throw new ArgumentException(Loc.Get("ProfilePathError"));
                 return Path.GetFullPath(path);
             }
         }
@@ -153,8 +162,7 @@ namespace Lunaris
             catch (Exception ex)
             {
                 if (!(ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException)) throw;
-                throw new IOException("Не удаётся записать настройки переносимого Dock в папку «" + directory +
-                    "». Проверьте свободное место и разрешение на запись или перенесите программу в доступную для записи папку.", ex);
+                throw new IOException(Loc.Format("PortableWriteError", directory), ex);
             }
         }
 
@@ -169,7 +177,7 @@ namespace Lunaris
                 if (!existing.IsInvalid) return;
                 int error = Marshal.GetLastWin32Error();
                 if (error == 2) return; // No old file to replace.
-                throw new IOException("Не удаётся обновить файл «" + Path.GetFileName(path) + "».",
+                throw new IOException(Loc.Format("UpdateFileError", Path.GetFileName(path)),
                                       new Win32Exception(error));
             }
         }
@@ -200,7 +208,7 @@ namespace Lunaris
                 catch (IOException ex) { readError = ex; }
                 catch (UnauthorizedAccessException ex) { readError = ex; }
             }
-            if (readError != null) throw new IOException("Не удалось прочитать настройки Dock.", readError);
+            if (readError != null) throw new IOException(Loc.Get("ReadSettingsError"), readError);
             return new UserSettings();
         }
 

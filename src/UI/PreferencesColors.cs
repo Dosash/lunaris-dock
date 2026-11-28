@@ -15,9 +15,9 @@ namespace Lunaris
 
         private void BuildColorEditor()
         {
-            AddColorField("CustomSurface", "Фон", () => ui.Settings.CustomSurface, value => ui.Settings.CustomSurface = value);
-            AddColorField("CustomText", "Текст", () => ui.Settings.CustomText, value => ui.Settings.CustomText = value);
-            AddColorField("CustomAccent", "Акцент", () => ui.Settings.CustomAccent, value => ui.Settings.CustomAccent = value);
+            AddColorField("CustomSurface", Loc.Get("SurfaceColor"), () => ui.Settings.CustomSurface, value => ui.Settings.CustomSurface = value);
+            AddColorField("CustomText", Loc.Get("TextColor"), () => ui.Settings.CustomText, value => ui.Settings.CustomText = value);
+            AddColorField("CustomAccent", Loc.Get("AccentColor"), () => ui.Settings.CustomAccent, value => ui.Settings.CustomAccent = value);
         }
 
         private void AddColorField(string id, string name, Func<string> getColor, Action<string> setColor)
@@ -30,7 +30,7 @@ namespace Lunaris
             frame.SetResourceReference(Border.BackgroundProperty, "Surface");
             frame.SetResourceReference(Border.BorderBrushProperty, "Rule");
             var row = new DockPanel { Height = 30 };
-            var pick = Visuals.Button("Choose" + id, "Выбрать цвет: " + name);
+            var pick = Visuals.Button("Choose" + id, Loc.Format("PickColor", name));
             pick.Width = 28;
             var swatch = new Border { Width = 17, Height = 17, CornerRadius = new CornerRadius(5), BorderThickness = new Thickness(1),
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Background = Visuals.Brush(getColor()) };
@@ -40,8 +40,8 @@ namespace Lunaris
             row.Children.Add(pick);
             var field = new TextBox { Text = getColor(), FontFamily = UiFonts.Text, FontSize = 12.5, Background = Brushes.Transparent,
                 Padding = new Thickness(0,0,3,0), BorderThickness = new Thickness(0), VerticalContentAlignment = VerticalAlignment.Center,
-                MaxLength = 7, ToolTip = "Цвет в формате #RRGGBB" };
-            Visuals.Identify(field, id, name + ", код цвета");
+                MaxLength = 7, ToolTip = Loc.Get("ColorFormat") };
+            Visuals.Identify(field, id, Loc.Format("ColorCode", name));
             field.SetResourceReference(TextBox.ForegroundProperty, "Ink");
             field.SetResourceReference(TextBox.CaretBrushProperty, "Ink");
             field.TextChanged += delegate {
@@ -86,7 +86,7 @@ namespace Lunaris
             var visibility = ui.Settings.Theme == "custom" ? Visibility.Visible : Visibility.Collapsed;
             bool layoutChanged = visibility != fields.Visibility;
             fields.Visibility = visibility;
-            customChoice.Content = ThemeExample("custom", "Своя");
+            customChoice.Content = ThemeExample("custom", Loc.Get("Theme.custom"));
             if (!layoutChanged || !IsVisible) return;
             // A newly visible row inside a ScrollViewer can retain its parent's old desired height.
             for (UIElement element = fields; element != null; element = VisualTreeHelper.GetParent(element) as UIElement)

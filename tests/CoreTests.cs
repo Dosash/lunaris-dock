@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Lunaris;
 using Microsoft.Win32;
 
@@ -23,7 +26,12 @@ internal class CoreTests
     static void Settings(string profile)
     {
         Environment.SetEnvironmentVariable("LUNARIS_PROFILE", profile);
+        var languages = new[] { "en", "ru", "de", "es", "zh-CN" };
+        CheckLanguageResources(languages);
         var first = SettingsStore.Load();
+        var defaultLanguage = first.Language;
+        Require(first.ShowUpdateBadge, "new profile shows available release badges");
+        Require(languages.Contains(defaultLanguage) && !first.LiquidGlass, "new profile has a supported language and standard material");
         Require(first.HideDockWhenCovered && !first.HideWindowsStart,"new shell options default to automatic Dock hiding and native Start unchanged");
         Require(first.Size == 48 && first.Magnify && !first.Startup && !first.ReplaceTaskbar, "safe settings on first launch");
         first.Size = 1000;
@@ -33,11 +41,16 @@ internal class CoreTests
         first.Magnify = false;
         first.InitializePins = false;
         first.Theme = "dark";
+        first.Language = "zh-CN";
+        first.LiquidGlass = true;
+        first.ShowUpdateBadge = false;
         first.Monitor = "saved-external-display";
         first.HideDockWhenCovered=false;
         first.HideWindowsStart=true;
         SettingsStore.Save(first);
         var restored = SettingsStore.Load();
+        Require(!restored.ShowUpdateBadge, "disabled release badge survives a profile round-trip");
+        Require(restored.Language == "zh-CN" && restored.LiquidGlass, "language and Liquid Glass survive a profile round-trip");
         Require(restored.Pins.SequenceEqual(new[] {"pinned-b","pinned-A"}), "deduplication preserves pin order");
         Require(restored.Size == 80 && restored.ReplaceTaskbar && restored.Startup && !restored.Magnify, "saved preferences round-trip and range");
         Require(restored.Theme == "dark" && restored.Monitor == "saved-external-display", "theme and display identity round-trip");
@@ -53,6 +66,8 @@ internal class CoreTests
         Require(SettingsStore.Load().Pins.Count == 2, "last valid backup after truncated settings");
         File.WriteAllText(path, "{\"Pins\":[\"legacy\"]}");
         var old = SettingsStore.Load();
+        Require(old.ShowUpdateBadge, "pre-update profiles default to showing release badges");
+        Require(old.Language == defaultLanguage && !old.LiquidGlass, "old profile inherits the installation or Windows language and keeps standard material");
         Require(old.Magnify && old.Size == 48 && old.Pins.Single() == "legacy", "migrate partial settings");
         File.WriteAllText(path, "{\"Pins\":[\"old-b\",\"old-a\"],\"Startup\":true,\"ReplaceTaskbar\":true,\"Size\":46,\"Magnify\":false,\"InitializePins\":false}");
         old = SettingsStore.Load();
@@ -72,12 +87,42 @@ internal class CoreTests
         custom=SettingsStore.Load();
         Require(custom.Theme=="custom" && custom.CustomSurface=="#302040" && custom.CustomText=="#EEEEDD" &&
                 custom.CustomAccent=="#AABBFF","all three explicit custom colors survive an atomic profile round-trip");
-        File.WriteAllText(path, "{\"Theme\":\"invalid\",\"Monitor\":\"\",\"Pins\":[]}");
+        File.WriteAllText(path, "{\"Language\":\"invalid\",\"Theme\":\"invalid\",\"Monitor\":\"\",\"Pins\":[]}");
         old = SettingsStore.Load();
+        Require(languages.Contains(old.Language), "unknown language resolves to a supported translation");
         Require(old.Theme=="system" && old.Monitor=="primary","unknown theme and empty monitor resolve to defaults");
         File.WriteAllText(path, "{");
         File.WriteAllText(path + ".bak", "{");
         Require(!SettingsStore.Load().ReplaceTaskbar, "both files damaged: safe defaults");
+    }
+
+    static void CheckLanguageResources(string[] languages)
+    {
+        Dictionary<string, string> reference = null;
+        foreach (string language in languages)
+        {
+            var entries = new Dictionary<string, string>(StringComparer.Ordinal);
+            using (var stream = typeof(UserSettings).Assembly.GetManifestResourceStream("Lunaris.Languages." + language + ".txt"))
+            using (var reader = new StreamReader(stream, new UTF8Encoding(false, true)))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (String.IsNullOrWhiteSpace(line) || line.StartsWith("#")) continue;
+                    int split = line.IndexOf('=');
+                    if (split <= 0 || String.IsNullOrWhiteSpace(line.Substring(split + 1)))
+                        throw new Exception("Missing translation in " + language + ": " + line);
+                    string value = line.Substring(split + 1);
+                    var placeholders = Regex.Matches(value, @"\{(\d+)[^}]*\}").Cast<Match>()
+                        .Select(m => m.Groups[1].Value).Distinct().OrderBy(id => id);
+                    entries.Add(line.Substring(0, split), String.Join(",", placeholders));
+                }
+            }
+            if (reference == null) reference = entries;
+            Require(entries.Count > 0 && entries.Count == reference.Count && reference.All(pair =>
+                entries.ContainsKey(pair.Key) && entries[pair.Key] == pair.Value),
+                "complete embedded translations and format placeholders for " + language);
+        }
     }
 
     static void Library()
@@ -127,6 +172,25 @@ internal class CoreTests
     [DllImport("advapi32.dll")]
     static extern int RegOverridePredefKey(IntPtr key, IntPtr replacement);
 
+    static void InstallLanguage(RegistryKey sandbox)
+    {
+        var detect = typeof(UserSettings).Assembly.GetType("Lunaris.Loc", true).GetMethod("DetectDefault", InternalStatic);
+        var previous = Thread.CurrentThread.CurrentUICulture;
+        try
+        {
+            Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("es-MX");
+            Require((string)detect.Invoke(null, null) == "es", "uninstalled copy uses Windows UI language");
+            using (var key = sandbox.CreateSubKey(@"Software\LunarisDock", RegistryKeyPermissionCheck.ReadWriteSubTree, RegistryOptions.Volatile))
+            {
+                key.SetValue("InstallLanguage", "zhCN");
+                Require((string)detect.Invoke(null, null) == "zh-CN", "Chinese installer code selects the simplified Chinese catalogue");
+                key.SetValue("InstallLanguage", "de");
+                Require((string)detect.Invoke(null, null) == "de", "installed language takes precedence over Windows UI language");
+            }
+        }
+        finally { Thread.CurrentThread.CurrentUICulture = previous; }
+    }
+
     static void Themes()
     {
         var appearance = typeof(DesktopUi).Assembly.GetType("Lunaris.Appearance",true);
@@ -149,6 +213,7 @@ internal class CoreTests
                 if (error!=0) throw new System.ComponentModel.Win32Exception(error);
                 try
                 {
+                    InstallLanguage(sandbox);
                     apply("dark"); apply("system");
                     Require(!isDark(),"system mode follows the light Windows app preference");
                     simulated.SetValue("AppsUseLightTheme",0,RegistryValueKind.DWord);
@@ -159,6 +224,17 @@ internal class CoreTests
                     Thread.Sleep(720);
                     apply("light");
                     Require(!isDark(),"explicit light appearance stays selected against dark Windows preference");
+                    var settings = new UserSettings { Theme = "light", LiquidGlass = true };
+                    var refreshFor = appearance.GetMethod("RefreshFor", InternalStatic);
+                    var glass = appearance.GetProperty("Glass", InternalStatic);
+                    simulated.SetValue("EnableTransparency", 1, RegistryValueKind.DWord);
+                    refreshFor.Invoke(null, new object[] {settings});
+                    Require((glass.GetValue(null,null) != null) == !SystemParameters.HighContrast,
+                        "glass material follows the enabled Windows transparency and high-contrast settings");
+                    simulated.SetValue("EnableTransparency", 0, RegistryValueKind.DWord);
+                    refreshFor.Invoke(null, new object[] {settings});
+                    Require(glass.GetValue(null,null) == null && settings.LiquidGlass,
+                        "turning off Windows transparency restores the standard surface and retains the preference");
                 }
                 finally
                 {
@@ -207,6 +283,25 @@ internal class CoreTests
         Require(apply(new UserSettings{Theme="light"}) && !flag("Custom") && !flag("Dark") &&
                 brushes()[0].Color!=light[0].Color,"switching from a custom light palette restores all built-in roles");
         apply(new UserSettings{Theme="system"});
+    }
+
+    static void GlassRefraction()
+    {
+        const int size = 32, stride = size * 4;
+        byte[] source = new byte[stride * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++) {
+                source[y * stride + x * 4] = (byte)(x * 8);
+                source[y * stride + x * 4 + 1] = (byte)(y * 8);
+            }
+        var image = BitmapSource.Create(size, size, 96, 96, PixelFormats.Bgr32, null, source, stride);
+        var glass = typeof(DesktopUi).Assembly.GetType("Lunaris.LaunchGlass", true);
+        var result = (BitmapSource)glass.GetMethod("Refract", InternalStatic).Invoke(null, new object[] {image});
+        byte[] pixels = new byte[source.Length];
+        result.CopyPixels(pixels, stride, 0);
+        int edge = size / 2 * stride, centre = edge + size / 2 * 4;
+        Require(result.IsFrozen && pixels[edge] > source[edge] && pixels[centre] == source[centre] &&
+            pixels[centre + 1] == source[centre + 1], "glass refracts a synthetic backdrop at the edge and preserves the centre");
     }
 
     static void MonitorRow()
@@ -410,7 +505,7 @@ internal class CoreTests
     public static int Main()
     {
         string profile = Path.Combine(Path.GetTempPath(), "Lunaris-Core-" + Guid.NewGuid().ToString("N"));
-        try { Settings(profile); Library(); StartFolderImport(); Gestures(); Themes(); CustomThemes(); MonitorRow(); Fonts(); Catalog(); return 0; }
+        try { Settings(profile); Library(); StartFolderImport(); Gestures(); Themes(); CustomThemes(); GlassRefraction(); MonitorRow(); Fonts(); Catalog(); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
         finally
         {

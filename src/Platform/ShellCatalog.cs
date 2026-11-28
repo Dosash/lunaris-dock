@@ -138,6 +138,12 @@ namespace Lunaris
         internal void Launch(AppEntry app)
         {
             if (app == null || String.IsNullOrEmpty(app.Id)) return;
+            if (app.DirectPath != null)
+            {
+                Process.Start(new ProcessStartInfo(app.DirectPath) { UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(app.DirectPath) });
+                return;
+            }
             Item item;
             lock (gate) items.TryGetValue(app.Id, out item);
             if (item != null && item.ItemList != null)
@@ -160,10 +166,10 @@ namespace Lunaris
                 Process.Start(new ProcessStartInfo(app.Id) { UseShellExecute = true });
                 return;
             }
-            throw new InvalidOperationException("Приложение больше не доступно. Обновите список приложений.");
+            throw new InvalidOperationException(Loc.Get("AppUnavailable"));
         }
 
-        private static bool IsExecutable(string path)
+        internal static bool IsExecutable(string path)
         {
             return !String.IsNullOrEmpty(path) && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                 path.IndexOfAny(Path.GetInvalidPathChars()) < 0 && Path.IsPathRooted(path);

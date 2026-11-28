@@ -4,7 +4,7 @@ param(
     [switch]$PortableOnly,
     [switch]$InstallerOnly,
     [string]$Iscc,
-    [string]$PackageVersion = '1.3.0'
+    [string]$PackageVersion = '1.3.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +33,10 @@ try {
         "/win32manifest:$source\app.manifest", '/utf8output')
     if (Test-Path "$source\LunarisDock.ico") { $argsCsc += "/win32icon:$source\LunarisDock.ico" }
     $argsCsc += "/resource:$source\UI\Preferences.xaml,Lunaris.Preferences.xaml"
-    foreach ($name in 'System','System.Core','System.Xaml','System.Xml','System.Drawing','System.Windows.Forms',
+    foreach ($code in 'en','ru','de','es','zh-CN') {
+        $argsCsc += "/resource:$source\Languages\$code.txt,Lunaris.Languages.$code.txt"
+    }
+    foreach ($name in 'System','System.Core','System.Net.Http','System.Xaml','System.Xml','System.Drawing','System.Windows.Forms',
                       'System.Runtime.Serialization','Microsoft.CSharp','System.Management','System.Security','System.Configuration') {
         $argsCsc += "/reference:$framework\$name.dll"
     }

@@ -24,11 +24,11 @@ namespace Lunaris
         private void BuildPills()
         {
             pills.Children.Clear();
-            AddPill("All","Все");
-            AddPill("Pinned","Закреплённые");
-            AddPill("Open","Открытые");
-            AddPill("Utilities","Утилиты");
-            AddPill("Media","Мультимедиа");
+            AddPill("All",Loc.Get("All"));
+            AddPill("Pinned",Loc.Get("Pinned"));
+            AddPill("Open",Loc.Get("OpenApps"));
+            AddPill("Utilities",Loc.Get("Utilities"));
+            AddPill("Media",Loc.Get("Media"));
         }
 
         private void AddPill(string id,string name)
@@ -45,7 +45,7 @@ namespace Lunaris
                 Translucent(Appearance.Selection,240) : Translucent(Appearance.Panel,138),
                 BorderThickness = new Thickness(1), BorderBrush = active ?
                 Translucent(Appearance.Accent,125) : Translucent(Appearance.Muted,35) };
-            AutomationProperties.SetItemStatus(pill,active ? "Выбрано" : "");
+            AutomationProperties.SetItemStatus(pill,active ? Loc.Get("Selected") : "");
             pill.Click += delegate {
                 if (id == "All" && folderId != LaunchLibrary.Root && !globalQuery) {
                     string child = folderId;
@@ -130,7 +130,7 @@ namespace Lunaris
                     art.Children.Add(new Border { Background=Appearance.Panel,BorderBrush=Translucent(Appearance.Muted,120),
                         BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(5),Width=15,Height=15,
                         VerticalAlignment=VerticalAlignment.Bottom,HorizontalAlignment=HorizontalAlignment.Right,Child=mark });
-                    AutomationProperties.SetItemStatus(tile,"Закреплено");
+                    AutomationProperties.SetItemStatus(tile,Loc.Get("IsPinned"));
                 }
                 body.Children.Add(art);
                 var name = Text(item.Name,12.5); name.Width = Math.Max(30,cellWidth-12); name.Height=32;
@@ -144,7 +144,7 @@ namespace Lunaris
                 tile.Content=frame;
                 tile.MouseMove += delegate { if (!navigation.Active && selected!=index) { selected=index; MarkSelection(); } };
                 tile.Click += delegate { if (!dragging) OpenItem(item); };
-                if (item.IsFolder) AutomationProperties.SetItemStatus(tile, item.IsSystem ? "Папка Windows" : "Личная папка");
+                if (item.IsFolder) AutomationProperties.SetItemStatus(tile, item.IsSystem ? Loc.Get("WindowsFolder") : Loc.Get("PersonalFolder"));
                 if (search.Text.Trim().Length != 0 && item.ParentId != LaunchLibrary.Root)
                     tile.ToolTip = Visuals.Tip(item.Name + "\n" + FolderPath(item.ParentId));
                 AttachLibraryMenu(tile, item);
@@ -157,10 +157,10 @@ namespace Lunaris
             addToEmptyFolder.Visibility = results.Count == 0 && BrowsingFolder && folderId != LaunchLibrary.Root &&
                 !ui.CatalogLoading ? Visibility.Visible : Visibility.Collapsed;
             if (results.Count==0)
-                empty.Text = ui.CatalogLoading ? "Загрузка приложений…" : ui.CatalogError!=null ?
-                    "Не удалось загрузить приложения" : search.Text.Trim().Length>0 ? "Ничего не найдено" :
-                    category=="Pinned" ? "Закреплённых приложений пока нет" :
-                    category=="Open" ? "Нет открытых приложений" : folderId != LaunchLibrary.Root ? "Папка пуста" : "Здесь пока нет приложений";
+                empty.Text = ui.CatalogLoading ? Loc.Get("LoadingApps") : ui.CatalogError!=null ?
+                    Loc.Get("LoadAppsError") : search.Text.Trim().Length>0 ? Loc.Get("NoResults") :
+                    category=="Pinned" ? Loc.Get("NoPinned") :
+                    category=="Open" ? Loc.Get("NoOpen") : folderId != LaunchLibrary.Root ? Loc.Get("EmptyFolder") : Loc.Get("NoApps");
             MarkSelection(); RenderPager();
         }
 
@@ -181,7 +181,7 @@ namespace Lunaris
             if(Pages<=9) {
                 for(int i=0;i<Pages;i++) {
                     int page=i;
-                    var b=Visuals.Button("Launchpad.Page."+(i+1),"Страница "+(i+1)+" из "+Pages);
+                    var b=Visuals.Button("Launchpad.Page."+(i+1),Loc.Format("Page", i+1, Pages));
                     b.Width=17; b.Focusable=false;
                     b.Content=new Ellipse { Fill=i==Page ? Appearance.Text : Translucent(Appearance.Muted,125),
                         Width=i==Page ? 7:5, Height=i==Page ? 7:5, HorizontalAlignment=HorizontalAlignment.Center,
@@ -196,7 +196,7 @@ namespace Lunaris
 
         private void PageArrow(int step)
         {
-            var b=Visuals.Button(step>0?"Launchpad.Next":"Launchpad.Previous",step>0?"Следующая страница":"Предыдущая страница");
+            var b=Visuals.Button(step>0?"Launchpad.Next":"Launchpad.Previous",step>0?Loc.Get("NextPage"):Loc.Get("PreviousPage"));
             b.Width=26; b.Focusable=false; b.IsEnabled=Page+step>=0 && Page+step<Pages; b.Opacity=b.IsEnabled ? .85:.30;
             b.Content=Glyph(step>0?"\uE76C":"\uE76B",11); b.Click+=delegate { ChangePage(step); }; pager.Children.Add(b);
         }

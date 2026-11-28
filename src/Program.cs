@@ -42,14 +42,16 @@ namespace Lunaris
                     try
                     {
                         if (command) return Has(args, "--exit") ? 0 : 2;
+                        var settings = SettingsStore.Load();
+                        Loc.Use(settings.Language);
                         SettingsStore.CheckPortableProfile();
                         // Two different test profiles can share a desktop only when previewing.
                         bool shellOwner;
                         using (var shell = new Mutex(true, preview ? null : @"Local\LunarisDock.Shell." + identity, out shellOwner))
                         {
                             if (!preview && !shellOwner)
-                                throw new InvalidOperationException("В этом сеансе уже работает Dock с другим профилем.");
-                            return Run(name, preview);
+                                throw new InvalidOperationException(Loc.Get("OtherProfile"));
+                            return Run(name, preview, settings);
                         }
                     }
                     finally { instance.ReleaseMutex(); }
@@ -58,7 +60,7 @@ namespace Lunaris
             catch (Exception ex)
             {
                 if (!command && !Has(args, "--guardian"))
-                    MessageBox.Show("Не удалось запустить Lunaris Dock.\n\n" + ex.Message,
+                    MessageBox.Show(Loc.Get("StartError") + "\n\n" + ex.Message,
                                     "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
@@ -107,7 +109,7 @@ namespace Lunaris
             return 3;
         }
 
-        private static int Run(string name, bool preview)
+        private static int Run(string name, bool preview, UserSettings settings)
         {
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
@@ -118,8 +120,9 @@ namespace Lunaris
             using (var platform = new PlatformServices(preview))
             {
                 data.Write(0, Process.GetCurrentProcess().Id);
-                var settings = SettingsStore.Load();
-                if (SettingsStore.Portable && !preview) settings.Startup = platform.IsStartupRegistered();
+                // Setup and Preferences share this user's Run registration. An upgrade
+                // can change it while the profile still holds the previous selection.
+                if (!preview) settings.Startup = platform.IsStartupRegistered();
                 bool replace = settings.ReplaceTaskbar;
                 bool startup = settings.Startup;
                 bool hideWindowsStart = settings.HideWindowsStart;
@@ -129,7 +132,7 @@ namespace Lunaris
                     try { SettingsStore.Save(settings); }
                     catch (IOException ex) { message += "\n" + ex.Message; }
                     catch (UnauthorizedAccessException ex) { message += "\n" + ex.Message; }
-                    MessageBox.Show("Замена панели задач отключена.\n\n" + message,
+                    MessageBox.Show(Loc.Get("TaskbarDisabled") + "\n\n" + message,
                                     "Lunaris Dock", MessageBoxButton.OK, MessageBoxImage.Warning);
                 };
                 Action save = delegate
@@ -149,31 +152,31 @@ namespace Lunaris
                         string errors = ex.Message;
                         if (replace != settings.ReplaceTaskbar)
                             try { platform.ApplyTaskbar(replace); }
-                            catch (Exception rollback) { errors += "\nПанель задач: " + rollback.Message; }
+                            catch (Exception rollback) { errors += "\n" + Loc.Format("TaskbarIssue", rollback.Message); }
                         if (startup != settings.Startup)
                             try { platform.ApplyStartup(startup); }
-                            catch (Exception rollback) { errors += "\nАвтозапуск: " + rollback.Message; }
+                            catch (Exception rollback) { errors += "\n" + Loc.Format("StartupIssue", rollback.Message); }
                         if (hideWindowsStart != settings.HideWindowsStart)
                             try { platform.ApplyWindowsStart(hideWindowsStart); }
-                            catch (Exception rollback) { errors += "\nПуск Windows: " + rollback.Message; }
+                            catch (Exception rollback) { errors += "\n" + Loc.Format("StartIssue", rollback.Message); }
                         settings.ReplaceTaskbar = replace;
                         settings.Startup = startup;
                         settings.HideWindowsStart = hideWindowsStart;
-                        MessageBox.Show("Изменения не сохранены.\n\n" + errors, "Lunaris Dock",
+                        MessageBox.Show(Loc.Get("ChangesUnsaved") + "\n\n" + errors, "Lunaris Dock",
                                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 };
                 var ui = new DesktopUi(platform, settings, save, () => app.Shutdown());
+                app.SessionEnding += delegate { ui.Dispose(); };
                 RegisteredWaitHandle toggleWait = null, quitWait = null;
                 try
                 {
                     platform.Start();
-                    if (startup && !SettingsStore.Portable) platform.ApplyStartup(true);
                     platform.ApplyTaskbar(replace);
                     ui.Start();
                     platform.ApplyWindowsStart(hideWindowsStart);
                     toggleWait = DispatchSignal(toggle, app.Dispatcher, ui.ToggleLaunchpad);
-                    quitWait = DispatchSignal(quit, app.Dispatcher, () => app.Shutdown());
+                    quitWait = DispatchSignal(quit, app.Dispatcher, ui.Exit);
                     return app.Run();
                 }
                 finally

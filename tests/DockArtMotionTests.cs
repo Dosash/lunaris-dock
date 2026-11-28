@@ -6,6 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
+using System.Windows.Threading;
 using Lunaris;
 
 internal static class DockArtMotionTests
@@ -18,6 +20,75 @@ internal static class DockArtMotionTests
         Console.WriteLine("PASS "+caption);
     }
     static bool Near(double a,double b) { return Math.Abs(a-b)<.00001; }
+
+    static Button Item(string key)
+    {
+        return new Button { Tag=key, Width=48, Height=48, Content=new Border { Background=Brushes.Teal } };
+    }
+
+    static void Pump(int milliseconds)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(milliseconds) };
+        timer.Tick += delegate { timer.Stop(); frame.Continue=false; };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+    }
+
+    static void Items()
+    {
+        const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
+        var type = Product.GetType("Lunaris.DockItemMotion",true);
+        var strip = new StackPanel { Orientation=Orientation.Horizontal, HorizontalAlignment=HorizontalAlignment.Center };
+        var motion = Activator.CreateInstance(type,hidden,null,new object[]{strip},null);
+        Func<bool,object> capture = animate => type.GetMethod("Capture",hidden).Invoke(motion,new object[]{animate});
+        int ended=0;
+        Func<object,bool> play = before => (bool)type.GetMethod("Play",hidden).Invoke(motion,new object[]{before,false,new Action(delegate { ended++; })});
+        Action<string[]> layout = keys => {
+            strip.Children.Clear();
+            foreach (var key in keys) strip.Children.Add(Item(key));
+            strip.UpdateLayout();
+        };
+        using(var source = new HwndSource(new HwndSourceParameters("Dock membership motion") {
+            WindowStyle=unchecked((int)0x80000000), PositionX=-31000, PositionY=-31000, Width=400, Height=80
+        }))
+        {
+            var root = new Grid();
+            root.Children.Add(strip);
+            source.RootVisual=root;
+            layout(new[]{"start","A","B"});
+            root.Measure(new Size(400,80)); root.Arrange(new Rect(0,0,400,80)); root.UpdateLayout();
+            var before=capture(true);
+            layout(new[]{"start","B","C"});
+            Check(play(before),"a displayed application entering and one leaving start a transition");
+            var ghost=strip.Children.OfType<Border>().Single();
+            var incoming=strip.Children.OfType<Button>().Last();
+            Check((string)ghost.Tag=="A" && !ghost.IsHitTestVisible && !ghost.Focusable && incoming.Opacity<.1,
+                "departing artwork has no clickable control while the new application fades in");
+            Pump(72);
+            var scale=(ScaleTransform)incoming.LayoutTransform;
+            var neighbour=strip.Children.OfType<Button>().First(b=>(string)b.Tag=="B");
+            double x=neighbour.TranslatePoint(new Point(neighbour.ActualWidth/2,0),strip).X-strip.ActualWidth/2;
+            Check(scale.ScaleX>0 && scale.ScaleX<1 && incoming.Opacity>0 && incoming.Opacity<1 &&
+                ghost.Opacity>0 && ghost.Opacity<1,"both appearances pass through intermediate scales and opacities");
+            Check(x>0 && x<48,"the neighbouring application glides between its former and final centres");
+            double previous=ghost.Opacity;
+            before=capture(true);
+            layout(new[]{"start","A","B","C"});
+            Check(play(before) && Math.Abs(previous-strip.Children.OfType<Button>().First(b=>(string)b.Tag=="A").Opacity)<.14,
+                "an interrupted departure reverses from its displayed opacity");
+            Pump(360);
+            Check(ended==1 && strip.Children.Count==4 && strip.Children.OfType<Button>().All(b=>b.Opacity==1 &&
+                b.LayoutTransform.Value.IsIdentity && b.RenderTransform.Value.IsIdentity),
+                "the latest transition alone settles, returning all live controls to normal layout");
+            before=capture(true);
+            layout(new[]{"start","C","B","A"});
+            Check(!play(before),"a committed drag reorder has no second entrance animation");
+            before=capture(false);
+            layout(new[]{"start","B"});
+            Check(!play(before) && strip.Children.Count==2,"reduced motion, resize and hidden docks use the final layout immediately");
+        }
+    }
     static void Motion()
     {
         var type=Product.GetType("Lunaris.DockSurface+SlideCurve",true);
@@ -140,7 +211,7 @@ internal static class DockArtMotionTests
     }
     [STAThread] static int Main()
     {
-        try { Motion(); Alpha(); Art(); return 0; }
+        try { Motion(); Items(); Alpha(); Art(); return 0; }
         catch(Exception ex) { Console.WriteLine("FAIL "+ex); return 1; }
     }
 }
