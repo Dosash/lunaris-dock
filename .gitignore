@@ -10,6 +10,10 @@
 !/docs/screenshots/dock.png
 !/docs/screenshots/start.png
 !/docs/screenshots/settings.png
+!/docs/screenshots/sound.png
+!/docs/screenshots/network.png
+!/docs/screenshots/language.png
+!/docs/screenshots/editor.png
 !/build.ps1
 !/src/
 !/src/Platform/
@@ -18,6 +22,7 @@
 !/src/Languages/*.txt
 !/src/**/*.cs
 !/src/UI/Preferences.xaml
+!/src/UI/StatusMenuStyles.xaml
 !/src/App.config
 !/src/app.manifest
 !/src/LunarisDock.ico
@@ -25,6 +30,7 @@
 !/scripts/*.ps1
 !/packaging/
 !/packaging/Lunaris.iss
+!/packaging/Lucide-LICENSE.txt
 !/packaging/languages/
 !/packaging/languages/ChineseSimplified.isl
 !/packaging/languages/ChineseSimplified-LICENSE.txt

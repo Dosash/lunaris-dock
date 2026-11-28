@@ -76,21 +76,27 @@ namespace Lunaris
 
         internal bool IsFullscreen()
         {
+            return FullscreenMonitor(true) != IntPtr.Zero;
+        }
+
+        internal IntPtr FullscreenMonitor(bool primaryOnly)
+        {
             IntPtr window = GetForegroundWindow();
             uint pid;
             GetWindowThreadProcessId(window, out pid);
-            if (window == IntPtr.Zero || pid == owner || ShellWindow(window) || IsIconic(window)) return false;
+            if (window == IntPtr.Zero || pid == owner || ShellWindow(window) || IsIconic(window)) return IntPtr.Zero;
             // A maximized browser can paint even its title bar inside the client area.
             // Chromium removes caption and resize frame when entering actual F11 fullscreen.
-            if (IsZoomed(window) && (GetWindowLongPtr(window, -16).ToInt64() & 0x00C40000) != 0) return false;
+            if (IsZoomed(window) && (GetWindowLongPtr(window, -16).ToInt64() & 0x00C40000) != 0) return IntPtr.Zero;
             Rect client;
-            if (!GetClientRect(window, out client)) return false;
+            if (!GetClientRect(window, out client)) return IntPtr.Zero;
             Point origin = new Point();
-            if (!ClientToScreen(window, ref origin)) return false;
+            if (!ClientToScreen(window, ref origin)) return IntPtr.Zero;
             MonitorInfo monitor = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
-            if (!GetMonitorInfo(MonitorFromWindow(window, 2), ref monitor) || (monitor.Flags & 1) == 0) return false;
+            IntPtr handle = MonitorFromWindow(window, 2);
+            if (!GetMonitorInfo(handle, ref monitor) || (primaryOnly && (monitor.Flags & 1) == 0)) return IntPtr.Zero;
             return origin.X <= monitor.Bounds.Left && origin.Y <= monitor.Bounds.Top &&
-                origin.X + client.Right >= monitor.Bounds.Right && origin.Y + client.Bottom >= monitor.Bounds.Bottom;
+                origin.X + client.Right >= monitor.Bounds.Right && origin.Y + client.Bottom >= monitor.Bounds.Bottom ? handle : IntPtr.Zero;
         }
 
         internal HashSet<string> CoveredScreens(ScreenInfo[] screens)

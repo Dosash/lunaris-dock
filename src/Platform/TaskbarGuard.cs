@@ -107,7 +107,7 @@ namespace Lunaris
                     try
                     {
                         if (!Restore() || end.WaitOne(0) || parent.HasExited) return 4;
-                        IntPtr tray = FindWindow("Shell_TrayWnd", null);
+                        IntPtr tray = ShellTaskbar();
                         if (tray == IntPtr.Zero) return 4;
                         var journal = new List<string> { GetAutoHide() ? "1" : "0" };
                         foreach (IntPtr window in Bars())
@@ -150,7 +150,7 @@ namespace Lunaris
             IntPtr lastTray = IntPtr.Zero;
             Action refresh = delegate
             {
-                IntPtr tray = FindWindow("Shell_TrayWnd", null);
+                IntPtr tray = ShellTaskbar();
                 if (tray == IntPtr.Zero) { lastTray = IntPtr.Zero; return; }
                 if (tray != lastTray || stateCheck.ElapsedMilliseconds >= 1500)
                 {
@@ -164,7 +164,7 @@ namespace Lunaris
             {
                 if (hwnd == IntPtr.Zero || obj != 0 || child != 0) return;
                 string name = WindowList.Class(hwnd);
-                if (name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd") Hide(hwnd);
+                if ((name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd") && IsShellWindow(hwnd)) Hide(hwnd);
             };
             IntPtr observer = SetWinEventHook(0x8002, 0x8002, IntPtr.Zero, callback, 0, 0, 0);
             try
@@ -177,7 +177,7 @@ namespace Lunaris
                     if (parent.HasExited || end.WaitOne(0)) return 4;
                     refresh();
                     var bars = Bars();
-                    if (FindWindow("Shell_TrayWnd", null) != IntPtr.Zero && bars.Count > 0 &&
+                    if (ShellTaskbar() != IntPtr.Zero && bars.Count > 0 &&
                         !bars.Exists(WindowList.IsWindowVisible) && !GetAutoHide()) break;
                     if (deadline.ElapsedMilliseconds >= 3200) return 4;
                     Thread.Sleep(40);
@@ -205,13 +205,29 @@ namespace Lunaris
             if (WindowList.IsWindowVisible(window)) ShowWindowAsync(window, 0);
         }
 
+        internal static bool IsShellWindow(IntPtr window)
+        {
+            uint shell, owner;
+            return GetWindowThreadProcessId(GetShellWindow(), out shell) != 0 &&
+                GetWindowThreadProcessId(window, out owner) != 0 && shell == owner;
+        }
+
+        internal static IntPtr ShellTaskbar()
+        {
+            IntPtr window = IntPtr.Zero;
+            while ((window = FindWindowEx(IntPtr.Zero, window, "Shell_TrayWnd", null)) != IntPtr.Zero)
+                if (IsShellWindow(window)) return window;
+            return IntPtr.Zero;
+        }
+
         private static List<IntPtr> Bars()
         {
             var bars = new List<IntPtr>();
-            IntPtr primary = FindWindow("Shell_TrayWnd", null);
+            IntPtr primary = ShellTaskbar();
             if (primary != IntPtr.Zero) bars.Add(primary);
             IntPtr last = IntPtr.Zero;
-            while ((last = FindWindowEx(IntPtr.Zero, last, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) bars.Add(last);
+            while ((last = FindWindowEx(IntPtr.Zero, last, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
+                if (IsShellWindow(last)) bars.Add(last);
             return bars;
         }
 
@@ -239,7 +255,7 @@ namespace Lunaris
             var timer = Stopwatch.StartNew();
             while (timer.ElapsedMilliseconds < 6800)
             {
-                if (FindWindow("Shell_TrayWnd", null) != IntPtr.Zero)
+                if (ShellTaskbar() != IntPtr.Zero)
                 {
                     List<IntPtr> bars = Bars();
                     foreach (IntPtr window in bars)
@@ -273,7 +289,7 @@ namespace Lunaris
 
         private static void SetAutoHide(bool enabled)
         {
-            var data = new AppBar { Size = Marshal.SizeOf(typeof(AppBar)), Hwnd = FindWindow("Shell_TrayWnd", null) };
+            var data = new AppBar { Size = Marshal.SizeOf(typeof(AppBar)), Hwnd = ShellTaskbar() };
             if (data.Hwnd == IntPtr.Zero) return;
             long state = unchecked((long)SHAppBarMessage(4, ref data).ToUInt64());
             data.Parameter = new IntPtr(enabled ? state | 1L : state & ~1L);
@@ -299,8 +315,9 @@ namespace Lunaris
         }
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, int flags);
-        [DllImport("user32.dll", CharSet=CharSet.Unicode)] internal static extern IntPtr FindWindow(string name, string caption);
+        [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr GetShellWindow();
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr last, string name, string caption);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll")] private static extern bool ShowWindowAsync(IntPtr window, int cmd);
         [DllImport("shell32.dll")] private static extern UIntPtr SHAppBarMessage(uint msg, ref AppBar data);
         [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEvent callback, uint pid, uint thread, uint flags);

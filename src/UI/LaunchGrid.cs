@@ -42,7 +42,7 @@ namespace Lunaris
             text.Foreground = active ? Appearance.Text : Appearance.Muted;
             pill.Content = new Border { Child = text, Padding = new Thickness(10,3,10,4),
                 CornerRadius = new CornerRadius(11), Background = active ?
-                Translucent(Appearance.Selection,240) : Translucent(Appearance.Panel,138),
+                Translucent(Appearance.Selection,240) : Appearance.Glass == null ? Translucent(Appearance.Panel,138) : Appearance.Glass.Group,
                 BorderThickness = new Thickness(1), BorderBrush = active ?
                 Translucent(Appearance.Accent,125) : Translucent(Appearance.Muted,35) };
             AutomationProperties.SetItemStatus(pill,active ? Loc.Get("Selected") : "");
@@ -76,14 +76,13 @@ namespace Lunaris
             wheelRemainder = 0;
             var words = search.Text.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (globalQuery != (words.Length > 0)) { globalQuery = words.Length > 0; BuildPills(); }
-            var pins = ui.Settings.Pins.Select(ui.FindApp).Where(app => app != null).ToList();
-            library = new LaunchLibrary(ui.Settings, ui.Catalog.Concat(pins));
+            var pins = ui.DockPins(true, out library);
             if (folderId != LaunchLibrary.Root && library.Find(folderId) == null) folderId = LaunchLibrary.Root;
             IEnumerable<LibraryItem> items;
             if (words.Length > 0)
             {
                 var running = ui.Windows.Where(window => window.App != null).Select(window => window.App);
-                var apps = ui.Catalog.Concat(pins).Concat(running).Select(ForApp);
+                var apps = ui.Catalog.Concat(pins.Where(pin => pin.App != null).Select(pin => pin.App)).Concat(running).Select(ForApp);
                 items = library.Folders().Concat(apps)
                     .Where(item => words.All(word => item.Name.IndexOf(word, StringComparison.CurrentCultureIgnoreCase) >= 0))
                     .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase);
@@ -92,7 +91,9 @@ namespace Lunaris
             {
                 switch (category)
                 {
-                    case "Pinned": items = pins.Select(ForApp); break;
+                    case "Pinned":
+                        items = pins.Where(pin => !pin.IsSeparator).Select(pin => pin.Folder ?? ForApp(pin.App));
+                        break;
                     case "Open": items = ui.Windows.Where(w => w.App != null).Select(w => ForApp(w.App)); break;
                     case "Utilities": items = ui.Catalog.Where(app => Matches(app, Utilities)).Select(ForApp); break;
                     case "Media": items = ui.Catalog.Where(app => Matches(app, Media)).Select(ForApp); break;
@@ -124,13 +125,15 @@ namespace Lunaris
                 tile.Focusable = false; tile.Margin = new Thickness(2,1,2,1);
                 var body = new StackPanel { HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center };
                 var art = new Grid { Width=iconSize+4,Height=iconSize+2 };
-                art.Children.Add(item.IsFolder ? FolderArt(item) : Visuals.Icon(item.App, iconSize));
-                if (!item.IsFolder && ui.Pinned(item.App.Id)) {
+                var icon = IconForItem(item);
+                art.Children.Add(ui.IconArt(icon,iconSize));
+                var status = item.IsFolder ? Loc.Get(item.IsSystem ? "WindowsFolder" : "PersonalFolder") : "";
+                if (ui.Pinned(item.IsFolder ? DockItem.FolderPrefix + item.Id : item.App.Id)) {
                     var mark = Glyph("\uE718",8); mark.Foreground=Appearance.Muted;
                     art.Children.Add(new Border { Background=Appearance.Panel,BorderBrush=Translucent(Appearance.Muted,120),
                         BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(5),Width=15,Height=15,
                         VerticalAlignment=VerticalAlignment.Bottom,HorizontalAlignment=HorizontalAlignment.Right,Child=mark });
-                    AutomationProperties.SetItemStatus(tile,Loc.Get("IsPinned"));
+                    status = status.Length == 0 ? Loc.Get("IsPinned") : status + ", " + Loc.Get("IsPinned");
                 }
                 body.Children.Add(art);
                 var name = Text(item.Name,12.5); name.Width = Math.Max(30,cellWidth-12); name.Height=32;
@@ -144,9 +147,10 @@ namespace Lunaris
                 tile.Content=frame;
                 tile.MouseMove += delegate { if (!navigation.Active && selected!=index) { selected=index; MarkSelection(); } };
                 tile.Click += delegate { if (!dragging) OpenItem(item); };
-                if (item.IsFolder) AutomationProperties.SetItemStatus(tile, item.IsSystem ? Loc.Get("WindowsFolder") : Loc.Get("PersonalFolder"));
+                AutomationProperties.SetItemStatus(tile,status);
                 if (search.Text.Trim().Length != 0 && item.ParentId != LaunchLibrary.Root)
                     tile.ToolTip = Visuals.Tip(item.Name + "\n" + FolderPath(item.ParentId));
+                ui.MarkIconButton(tile, icon);
                 AttachLibraryMenu(tile, item);
                 AttachLibraryDrag(tile, item);
                 Grid.SetRow(tile,i/columns); Grid.SetColumn(tile,i%columns);

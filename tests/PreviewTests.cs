@@ -13,7 +13,7 @@ using Lunaris;
 using Point = System.Drawing.Point;
 using AE = System.Windows.Automation.AutomationElement;
 
-internal static class PreviewTests
+internal static partial class PreviewTests
 {
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -23,6 +23,8 @@ internal static class PreviewTests
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int x, int y, uint data, UIntPtr info);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll",SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr h,uint msg,IntPtr w,IntPtr l,uint flags,uint timeout,out IntPtr result);
+    [DllImport("user32.dll",EntryPoint="GetAsyncKeyState")] static extern short MouseKeyState(int key);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls, string title);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     delegate bool EnumWindow(IntPtr h,IntPtr data);
@@ -34,6 +36,8 @@ internal static class PreviewTests
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern int GetApplicationUserModelId(IntPtr process,ref uint length,StringBuilder value);
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr handle, out NativeRect r);
+    [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr handle, out NativeRect r);
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr handle, ref Point point);
     [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left,Top,Right,Bottom; }
     const uint FixtureMode = 0x8000 + 314;
     static Process dock;
@@ -100,7 +104,9 @@ internal static class PreviewTests
         Reveal(Screen.PrimaryScreen);
         Until(delegate {
             var saved=SettingsStore.Load();
-            return !saved.InitializePins && saved.Pins.Count>0 && Buttons(Window("Dock"),"Dock.App").Length>=saved.Pins.Count;
+            var bar = Window("Dock");
+            int visible = Buttons(bar,"Dock.App").Length + Buttons(bar,"Dock.Folder").Length + Buttons(bar,"Dock.Separator").Length;
+            return !saved.InitializePins && saved.Pins.Count>0 && visible>=saved.Pins.Count;
         }, "initial pin discovery and Dock layout settled");
     }
     static void Command(string cmd)
@@ -202,7 +208,7 @@ internal static class PreviewTests
             {
                 int mode = m.WParam.ToInt32();
                 TopMost = false;
-                WindowState = FormWindowState.Normal;
+                if(mode!=1) WindowState = FormWindowState.Normal;
                 FormBorderStyle = mode == 2 ? FormBorderStyle.None : FormBorderStyle.Sizable;
                 if(mode==0) Bounds=new Rectangle(Screen.PrimaryScreen.WorkingArea.Left+150,Screen.PrimaryScreen.WorkingArea.Top+110,350,200);
                 if (mode == 1) WindowState = FormWindowState.Maximized;
@@ -214,6 +220,7 @@ internal static class PreviewTests
                 }
                 if (mode == 3) WindowState = FormWindowState.Minimized;
                 else Activate();
+                m.Result=Handle;
                 return;
             }
             base.WndProc(ref m);
@@ -227,6 +234,67 @@ internal static class PreviewTests
         {
             second.Show(); Application.Run(first);
         }
+    }
+    static string DescribeFixtureFocus(IntPtr target)
+    {
+        var active=GetForegroundWindow();
+        var name=new StringBuilder(128); GetClassName(active,name,name.Capacity);
+        return String.Format("target={0}/PID {1} zoom={2} iconic={3}, foreground={4}/PID {5} class={6}, LButton={7}",
+            target,Owner(target),IsZoomed(target),IsIconic(target),active,Owner(active),name,MouseKeyState(1)<0);
+    }
+    static bool StableFixtureFocus(IntPtr target)
+    {
+        var limit=Stopwatch.StartNew();
+        var settled=Stopwatch.StartNew();
+        while(limit.ElapsedMilliseconds<1200) {
+            if(!IsZoomed(target) || GetForegroundWindow()!=target) settled.Restart();
+            else if(settled.ElapsedMilliseconds>=180) return true;
+            Thread.Sleep(25);
+        }
+        return false;
+    }
+    static bool ClickFixtureClient(IntPtr target,int fixturePid)
+    {
+        NativeRect client;
+        if(!GetClientRect(target,out client)) throw new Exception("Cannot read the test fixture's client area.");
+        foreach(int y in new[]{2,1,3,0,4})
+        foreach(int x in new[]{2,1,3,0,4})
+        {
+            var point=new Point((client.Right-client.Left)*(2*x+1)/10,(client.Bottom-client.Top)*(2*y+1)/10);
+            if(!ClientToScreen(target,ref point) || WindowFromPoint(point)!=target) continue;
+            if(!SetCursorPos(point.X,point.Y) || Cursor.Position!=point || WindowFromPoint(point)!=target || Owner(target)!=fixturePid) continue;
+            mouse_event(2,0,0,0,UIntPtr.Zero);
+            mouse_event(4,0,0,0,UIntPtr.Zero);
+            return true;
+        }
+        return false;
+    }
+    static AE ReachFixtureGroup(Screen screen,Func<AE> dockButton)
+    {
+        Reveal(screen);
+        return WaitFor(delegate {
+            var button=dockButton();
+            return Visible(button) && Owner(WindowFromPoint(Center(button,.5)))==dock.Id ? button : null;
+        },"fixture group is reachable on the visible Dock");
+    }
+    static void FocusMaximizedFixture(IntPtr target,int fixturePid,string title,Func<AE> dockButton)
+    {
+        IntPtr handledBy;
+        if(Owner(target)!=fixturePid || SendMessageTimeout(target,FixtureMode,new IntPtr(1),IntPtr.Zero,2,3000,out handledBy)==IntPtr.Zero ||
+            handledBy!=target) throw new Exception("The expected form did not acknowledge maximization: "+DescribeFixtureFocus(target));
+        if(StableFixtureFocus(target)) return;
+        Console.WriteLine("Fixture after maximization: "+DescribeFixtureFocus(target));
+        // Windows can deny a background form foreground focus after Settings
+        // received the last input. Verify activation after each real input.
+        if(ClickFixtureClient(target,fixturePid)) {
+            if(StableFixtureFocus(target)) return;
+            Console.WriteLine("Fixture after client click: "+DescribeFixtureFocus(target));
+        }
+        // The form can be completely covered. Select its exact, unique HWND
+        // through the same Dock window menu verified earlier in this test.
+        Click(ReachFixtureGroup(Screen.FromHandle(target),dockButton),false);
+        Click(WaitFor(()=>Menu(title),"covered fixture is selectable by its unique title"),false);
+        if(!StableFixtureFocus(target)) throw new Exception("Cannot activate the maximized test window through its Dock menu: "+DescribeFixtureFocus(target));
     }
     static void CheckWindows()
     {
@@ -247,7 +315,7 @@ internal static class PreviewTests
                 Until(()=>IsIconic(a), "first fixture window minimized");
                 foreach(var hwnd in new[]{a,b})
                 {
-                    Click(button(),false);
+                    Click(ReachFixtureGroup(Screen.PrimaryScreen,button),false);
                     string title = tag + (hwnd==a ? " A" : " B");
                     Click(WaitFor(()=>Menu(title), "group menu contains "+title),false);
                     Until(()=>GetForegroundWindow()==hwnd && !IsIconic(hwnd), "Dock activates exact HWND for " + title);
@@ -280,7 +348,7 @@ internal static class PreviewTests
                 Until(()=>Window("Settings")!=null && !SettingsStore.Load().HideDockWhenCovered,
                     "auto-hide change saved while preferences remain open");
                 CloseSettings(prefs);
-                PostMessage(b,FixtureMode,new IntPtr(1),IntPtr.Zero);
+                FocusMaximizedFixture(b,fixture.Id,tag+" B",button);
                 Until(()=>IsZoomed(b) && GetForegroundWindow()==b,"maximized fixture active with auto-hide disabled");
                 SetCursorPos(away.X,away.Y);
                 StableDock(monitor,"disabled auto-hide keeps Dock visible over the active maximized window");
@@ -302,7 +370,7 @@ internal static class PreviewTests
                 SetCursorPos(away.X,away.Y);
                 StableDock(monitor,"preferences keep Dock visible after re-enabling auto-hide");
                 CloseSettings(prefs);
-                PostMessage(b,FixtureMode,new IntPtr(1),IntPtr.Zero);
+                FocusMaximizedFixture(b,fixture.Id,tag+" B",button);
                 SetCursorPos(away.X,away.Y);
                 Until(()=>IsZoomed(b) && GetForegroundWindow()==b && DockAt(monitor)==null,
                     "Dock hides again after closing preferences");
@@ -327,9 +395,13 @@ internal static class PreviewTests
     {
         var r = button.Current.BoundingRectangle;
         if (r.IsEmpty || r.Width<3 || r.Height<3) throw new Exception("Cannot capture a clipped or hidden icon: "+button.Current.Name+" "+r);
-        var image = new Bitmap((int)r.Width, (int)r.Height);
+        return CaptureBox(new Rectangle((int)r.Left,(int)r.Top,(int)r.Width,(int)r.Height));
+    }
+    static Bitmap CaptureBox(Rectangle box)
+    {
+        var image = new Bitmap(box.Width,box.Height);
         using (var graphics = Graphics.FromImage(image))
-            graphics.CopyFromScreen((int)r.Left,(int)r.Top,0,0,image.Size);
+            graphics.CopyFromScreen(box.Location,Point.Empty,image.Size);
         return image;
     }
     static double GlyphSpan(Bitmap image)
@@ -363,7 +435,6 @@ internal static class PreviewTests
         SetCursorPos(edge.X,edge.Y);
         var stable=Stopwatch.StartNew();
         System.Windows.Rect last=System.Windows.Rect.Empty;
-        AE button=null;
         Until(delegate {
             var current=Find(DockAt(monitor),AE.AutomationIdProperty,"OpenLaunchpad");
             if(current==null) { stable.Restart(); return false; }
@@ -375,15 +446,16 @@ internal static class PreviewTests
                 SetCursorPos(edge.X,edge.Y);
                 last=r; stable.Restart();
             }
-            button=current; return stable.ElapsedMilliseconds>=1350;
+            return stable.ElapsedMilliseconds>=1350;
         }, "primary Dock icon has stable visible pixel bounds after window changes");
-        using (var beforeHover = CaptureIcon(button))
+        var sample=HoverSamplingBounds(DockAt(monitor),last);
+        using (var beforeHover = CaptureBox(sample))
         {
             Move(new Point((int)last.Left+3,(int)last.Top+4));
             Thread.Sleep(240);
             var fresh=Find(DockAt(monitor),AE.AutomationIdProperty,"OpenLaunchpad");
             if(fresh==null || fresh.Current.BoundingRectangle!=last) throw new Exception("Dock geometry changed during hover comparison");
-            using (var afterHover = CaptureIcon(fresh))
+            using (var afterHover = CaptureBox(sample))
             {
                 double before=GlyphSpan(beforeHover),after=GlyphSpan(afterHover);
                 string measured=String.Format("Start tile spacing {0:F2} -> {1:F2} px (magnification {2})",before,after,magnify);
@@ -680,17 +752,7 @@ internal static class PreviewTests
         Func<AE> target=()=>Buttons(pad,"Launchpad.Folder").FirstOrDefault(t=>t.Current.Name==nested);
         var folder=WaitFor(target,"nested folder is on the same page as both apps");
         var app=Buttons(pad,"Launchpad.App").First(t=>t.Current.Name==names[0]);
-        var start=Center(app,.5);
-        var end=Center(folder,.5);
-        Move(start);
-        mouse_event(2,0,0,0,UIntPtr.Zero);
-        try {
-            for(int i=1;i<=20;i++) {
-                SetCursorPos(start.X+(end.X-start.X)*i/20,start.Y+(end.Y-start.Y)*i/20);
-                Thread.Sleep(35);
-            }
-            Thread.Sleep(150);
-        } finally { mouse_event(4,0,0,0,UIntPtr.Zero); }
+        DragTile(app, Center(folder,.5));
         Until(()=>Buttons(pad,"Launchpad.App").Select(t=>t.Current.Name).SequenceEqual(names.Skip(1)),
             "physical drag to the center of a folder removes only the source tile from its parent");
         Click(target(),false);
@@ -702,6 +764,65 @@ internal static class PreviewTests
         Until(()=>Buttons(pad,"Launchpad.App").Select(t=>t.Current.Name).SequenceEqual(names),
             "removing the nested folder restores its app to the alphabetized parent");
     }
+    static void DragTile(AE tile, Point end)
+    {
+        var start = Center(tile,.5);
+        Move(start);
+        mouse_event(2,0,0,0,UIntPtr.Zero);
+        try {
+            for(int i=1;i<=20;i++) {
+                SetCursorPos(start.X+(end.X-start.X)*i/20,start.Y+(end.Y-start.Y)*i/20);
+                Thread.Sleep(35);
+            }
+            Thread.Sleep(150);
+        } finally { mouse_event(4,0,0,0,UIntPtr.Zero); }
+    }
+
+    static void CheckDockSeparators()
+    {
+        var bar = Reveal(Screen.PrimaryScreen);
+        var pins = SettingsStore.Load().Pins;
+        var apps = Buttons(bar,"Dock.App");
+        if (pins.Count < 2) throw new Exception("Need two pins for the separator test.");
+        Click(apps[1],true);
+        WaitFor(()=>Menu("Добавить разделитель"), "app menu offers a separator");
+        Click(apps[1],true);
+        Until(()=>Menu("Добавить разделитель")==null, "right-clicking the icon again dismisses its menu");
+        Click(apps[1],true);
+        var command = WaitFor(()=>Menu("Добавить разделитель"), "reopened app menu");
+        Click(command,false);
+        var divider = WaitFor(()=>Buttons(bar,"Dock.Separator").FirstOrDefault(), "separator rendered");
+        var order = SettingsStore.Load().Pins;
+        string key = order.Except(pins).Single();
+        if (order.IndexOf(key) != 2) throw new Exception("Separator was inserted at the wrong icon.");
+        Drag(divider, Buttons(bar,"Dock.App")[0], false, order);
+        Until(()=>SettingsStore.Load().Pins.SequenceEqual(new[]{key}.Concat(pins)), "dragged separator saved before the first app");
+        Click(Buttons(bar,"Dock.Separator").Single(),true);
+        Click(WaitFor(()=>Menu("Удалить разделитель"), "separator removal command"),false);
+        Until(()=>SettingsStore.Load().Pins.SequenceEqual(pins), "removing the separator preserves app order");
+
+        var start = Find(bar,AE.AutomationIdProperty,"OpenLaunchpad").Current.BoundingRectangle;
+        var blank = new Point((int)((start.Right + Buttons(bar,"Dock.App")[0].Current.BoundingRectangle.Left)/2),
+                              (int)(start.Top + start.Height / 2));
+        Move(blank); mouse_event(8,0,0,0,UIntPtr.Zero); mouse_event(16,0,0,0,UIntPtr.Zero);
+        WaitFor(()=>Menu("Добавить разделитель"), "empty Dock space offers the separator command");
+        Keys("{ESC}");
+        var work = Screen.PrimaryScreen.WorkingArea;
+        using (var outside = new Form { ShowInTaskbar = false, TopMost = true, StartPosition = FormStartPosition.Manual,
+            Bounds = new Rectangle(work.Left + 30,work.Top + 30,160,110) })
+        {
+            outside.Show(); Application.DoEvents();
+            Click(Buttons(Reveal(Screen.PrimaryScreen),"Dock.App")[0],true);
+            WaitFor(()=>Menu("Добавить разделитель"), "Dock menu open over another active application");
+            var point = outside.PointToScreen(new Point(30,30));
+            if (WindowFromPoint(point) != outside.Handle) throw new Exception("Outside click fixture is covered.");
+            SetCursorPos(point.X,point.Y);
+            mouse_event(2,0,0,0,UIntPtr.Zero); mouse_event(4,0,0,0,UIntPtr.Zero);
+            Until(delegate { Application.DoEvents(); return Menu("Добавить разделитель")==null; },
+                "one click outside Lunaris dismisses the Dock menu");
+        }
+    }
+
     static void CheckLibrary()
     {
         var pad=OpenLaunchpad();
@@ -758,6 +879,13 @@ internal static class PreviewTests
         FillFolderName(pad,folderName);
         var folder=LibraryFolder(pad,folderName);
         if(!folder.Current.ItemStatus.Contains("Личная папка")) throw new Exception("New folder is not a personal folder.");
+        Click(folder,true);
+        Click(Action("Launchpad.Item.Pin"),false);
+        Until(()=>Buttons(Window("Dock"),"Dock.Folder").Any(f=>f.Current.Name==folderName), "personal Start folder pinned to Dock");
+        string folderKey = SettingsStore.Load().Pins.Last();
+        DragTile(LibraryFolder(pad,folderName), Center(Buttons(Window("Dock"),"Dock.App")[0],.2));
+        Until(()=>SettingsStore.Load().Pins[0]==folderKey && SettingsStore.Load().Pins.Count(key=>key==folderKey)==1,
+            "dragging a Start folder onto the Dock places its single pin at the drop position");
         MoveApp(pad,nameA,folderName);
         Click(Find(pad,AE.AutomationIdProperty,"Launchpad.More"),false);
         Click(Action("Launchpad.Folder.AddApps"),false);
@@ -781,8 +909,10 @@ internal static class PreviewTests
         Command("--toggle");
         Until(()=>Window("Launchpad")==null,"closed organized Launchpad");
         Stop(); Start();
-        pad=OpenLaunchpad();
-        Click(LibraryFolder(pad,renamed),false);
+        var pinnedFolder = WaitFor(()=>Buttons(Reveal(Screen.PrimaryScreen),"Dock.Folder").FirstOrDefault(f=>f.Current.Name==renamed),
+            "renamed Dock folder survives restart");
+        Click(pinnedFolder,false);
+        pad = WaitFor(()=>Window("Launchpad"), "Dock folder opens Start");
         Until(()=>Buttons(pad,"Launchpad.App").Select(t=>t.Current.Name).SequenceEqual(reverse),
               "renamed folder, moved apps and manual order survive process restart");
         if(folderImage!=null)
@@ -809,6 +939,8 @@ internal static class PreviewTests
         DragIntoNestedFolder(pad,sorted);
         Click(LibraryFolder(pad,renamed),true);
         Click(Action("Launchpad.Folder.Remove"),false);
+        Until(()=>!Buttons(Window("Dock"),"Dock.Folder").Any(f=>f.Current.Name==renamed) &&
+            !SettingsStore.Load().Pins.Any(key=>key.StartsWith("dock-folder:")), "deleting the folder also removes its Dock pin");
         foreach(var name in reverse)
         {
             RootCatalog(pad);
@@ -912,6 +1044,7 @@ internal static class PreviewTests
     static void Preview(string launchName,bool storeCalculator)
     {
         Start();
+        CheckDockSeparators();
         var pad = OpenLaunchpad();
         var search = Find(pad, AE.AutomationIdProperty, "Search");
         Until(() => search.Current.HasKeyboardFocus, "search receives initial keyboard focus");
@@ -1033,6 +1166,7 @@ internal static class PreviewTests
         int result=0;
         try
         {
+            if(RunStatusFixture(args)) return 0;
             SetProcessDpiAwarenessContext(new IntPtr(-4));
             if(args.Length==2 && args[0]=="--fixtures") { Fixtures(args[1]); return 0; }
             Environment.SetEnvironmentVariable("LUNARIS_PROFILE", profile);
@@ -1041,8 +1175,24 @@ internal static class PreviewTests
             exe=args[0];
             string imageArg=args.FirstOrDefault(arg=>arg.StartsWith("--folder-image=",StringComparison.Ordinal));
             if(imageArg!=null) folderImage=Path.GetFullPath(imageArg.Substring("--folder-image=".Length));
-            if(args.Contains("--settings-only")) { Start(); CheckSettings(); }
-            else if(args.Contains("--library-only")) { Start(); CheckLibrary(); }
+            if(args.Contains("--devices-only")) DevicePreview(args.Contains("--exercise-audio"),args.Contains("--exercise-radios"));
+            else if(args.Contains("--settings-only")) { Start(); CheckSettings(); }
+            else if(args.Contains("--status-only")) {
+                var cursor=Cursor.Position;
+                var foreground=GetForegroundWindow();
+                try {
+                    var settings=SettingsStore.Load(); settings.Monitor="all"; SettingsStore.Save(settings);
+                    Start();
+                    var bars=Roots().Where(b=>b.Current.AutomationId=="StatusBar" && Visible(b)).ToArray();
+                    if(bars.Length==0) throw new Exception("Missing preview status bar.");
+                    CheckTrayBars(bars,false,false);
+                    CheckStatusMenus(bars[0],"Menus");
+                } finally {
+                    Stop(); SetCursorPos(cursor.X,cursor.Y); if(foreground!=IntPtr.Zero) SetForegroundWindow(foreground);
+                }
+            }
+            else if(args.Contains("--appearance-only")) CheckAppearance();
+            else if(args.Contains("--library-only")) { Start(); CheckDockSeparators(); CheckLibrary(); }
             else if(args.Contains("--store-only")) {
                 var cursor = Cursor.Position;
                 var foreground = GetForegroundWindow();

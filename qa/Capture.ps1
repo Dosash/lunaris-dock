@@ -4,8 +4,8 @@
     [switch]$RunPortableTests
 )
 $ErrorActionPreference = 'Stop'
-if (!$OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '..\release\1.3.1' }
-if (!$Exe) { $Exe = Join-Path $PSScriptRoot '..\release\1.3.1\LunarisDock-Portable\LunarisDock.exe' }
+if (!$OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '..\release\1.3.1.6' }
+if (!$Exe) { $Exe = Join-Path $PSScriptRoot '..\release\1.3.1.6\LunarisDock-Portable\LunarisDock.exe' }
 $framework = "$env:windir\Microsoft.NET\Framework64\v4.0.30319"
 $tool = Join-Path $PSScriptRoot '..\build\CaptureDesktop.exe'
 & "$framework\csc.exe" /nologo /codepage:65001 /platform:x64 "/out:$tool" /r:System.Drawing.dll /r:System.Windows.Forms.dll "/r:$framework\WPF\UIAutomationClient.dll" "/r:$framework\WPF\UIAutomationTypes.dll" "/r:$framework\WPF\WindowsBase.dll" "$PSScriptRoot\CaptureDesktop.cs"

@@ -138,6 +138,12 @@ namespace Lunaris
         internal void Launch(AppEntry app)
         {
             if (app == null || String.IsNullOrEmpty(app.Id)) return;
+            if (app.DirectoryPath != null)
+            {
+                if (!Directory.Exists(app.DirectoryPath)) throw new DirectoryNotFoundException(app.DirectoryPath);
+                Process.Start(new ProcessStartInfo(app.DirectoryPath) { UseShellExecute = true, Verb = "explore" });
+                return;
+            }
             if (app.DirectPath != null)
             {
                 Process.Start(new ProcessStartInfo(app.DirectPath) { UseShellExecute = true,

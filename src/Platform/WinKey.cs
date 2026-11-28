@@ -116,6 +116,16 @@ namespace Lunaris
             return new Input { Type = 1, Key = key, Scan = scan, Flags = flags, Extra = Marker };
         }
 
+        internal static bool ShellShortcut(char key)
+        {
+            // Use the same marker as the hook so a status-bar command cannot
+            // become a standalone Win press and open Lunaris Start.
+            if (GetAsyncKeyState(0x10) < 0 || GetAsyncKeyState(0x11) < 0 || GetAsyncKeyState(0x12) < 0 ||
+                GetAsyncKeyState(0x5B) < 0 || GetAsyncKeyState(0x5C) < 0) return false;
+            var input = new[] { MakeKey(0x5B,0,1), MakeKey(key,0,0), MakeKey(key,0,2), MakeKey(0x5B,0,3) };
+            return SendInput(4,input,Marshal.SizeOf(typeof(Input))) == 4;
+        }
+
         public void Dispose()
         {
             if (dispatcher != null && thread != null && thread.IsAlive)

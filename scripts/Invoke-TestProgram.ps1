@@ -1,7 +1,8 @@
 param(
-    [Parameter(Mandatory)][string]$SourceFile,
+    [Parameter(Mandatory)][string[]]$SourceFile,
     [Parameter(Mandatory)][string]$ExePath,
     [string[]]$TestArguments = @(),
+    [string]$MainType,
     [switch]$CompileOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -12,13 +13,14 @@ New-Item -ItemType Directory $temp | Out-Null
 $output = Join-Path $temp 'LunarisTest.exe'
 try {
     $refs = @("/reference:$exe")
+    if ($MainType) { $refs += "/main:$MainType" }
     foreach ($dll in 'System','System.Core','System.Net.Http','System.Xml','System.Xaml','System.Runtime.Serialization','System.Windows.Forms','System.Drawing','Microsoft.CSharp') {
         $refs += "/reference:$framework\$dll.dll"
     }
     foreach ($dll in 'PresentationCore','PresentationFramework','WindowsBase','UIAutomationClient','UIAutomationTypes') {
         $refs += "/reference:$framework\WPF\$dll.dll"
     }
-    & "$framework\csc.exe" /nologo /target:exe /platform:x64 /codepage:65001 "/out:$output" @refs $SourceFile
+    & "$framework\csc.exe" /nologo /target:exe /platform:x64 /codepage:65001 "/out:$output" @refs @SourceFile
     if ($LASTEXITCODE -ne 0) { throw "Test did not compile ($LASTEXITCODE)." }
     if ($CompileOnly) { return }
     Copy-Item -LiteralPath $exe -Destination (Join-Path $temp 'LunarisDock.exe')

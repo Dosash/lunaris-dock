@@ -16,6 +16,7 @@ namespace Lunaris
         public string Id, Name;
         // A pin imported from Explorer launches this executable even when Id is a registered app.
         internal string DirectPath;
+        internal string DirectoryPath;
         public ImageSource Icon;
         public string StartFolder;
         internal Dictionary<string,string> StartFolderNames;
@@ -37,6 +38,7 @@ namespace Lunaris
         public const string DefaultCustomAccent = "#BAA7FF";
 
         [DataMember] public List<string> Pins = new List<string>();
+        [DataMember] public List<IconDesign> IconDesigns = new List<IconDesign>();
         [DataMember] public double Size = 48;
         [DataMember] public bool Magnify = true;
         [DataMember] public bool Startup;
@@ -47,6 +49,7 @@ namespace Lunaris
         [DataMember] public string Theme = "system";
         [DataMember] public string Language = Loc.DefaultLanguage;
         [DataMember] public bool LiquidGlass;
+        [DataMember] public bool ShowStatusBar = true;
         [DataMember] public bool ShowUpdateBadge = true;
         [DataMember] public string CustomSurface = DefaultCustomSurface;
         [DataMember] public string CustomText = DefaultCustomText;
@@ -60,6 +63,7 @@ namespace Lunaris
             Size = 48;
             Magnify = true;
             HideDockWhenCovered = true;
+            ShowStatusBar = true;
             ShowUpdateBadge = true;
             Theme = "system";
             Language = Loc.DefaultLanguage;
@@ -82,6 +86,7 @@ namespace Lunaris
             if (String.IsNullOrWhiteSpace(Monitor)) Monitor = "primary";
             if (Library == null) Library = new LibrarySettings();
             Library.Normalize();
+            IconDesigns = IconDesign.NormalizeList(IconDesigns);
             var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Pins = (Pins ?? new List<string>()).FindAll(id => !String.IsNullOrWhiteSpace(id) && unique.Add(id));
         }

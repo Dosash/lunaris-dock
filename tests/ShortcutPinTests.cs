@@ -244,6 +244,23 @@ internal static class ShortcutPinTests
                     // Save the normal fixture's profile after exercising real Shell selection data.
                     var originalPins = settings.Pins.ToList();
                     ReadOnlyShellDrops(strip, dir);
+                    string folder = Directory.CreateDirectory(Path.Combine(dir, "Documents QA")).FullName;
+                    string folderLink = Path.Combine(dir, "Documents shortcut.lnk");
+                    Shortcut(folderLink, folder, "");
+                    var beforeFolderDrop = settings.Pins.ToList();
+                    Drag(strip,new[]{folderLink,folder + Path.DirectorySeparatorChar,folder},DragDropEffects.Link,DragDrop.PreviewDropEvent,0);
+                    string directoryPin = SettingsStore.Load().Pins.Except(beforeFolderDrop).Single();
+                    var directory = (AppEntry)Call(ui,"FindApp",directoryPin);
+                    Require(directory != null && directory.Name == "Documents QA" &&
+                        (string)typeof(AppEntry).GetField("DirectoryPath",Hidden).GetValue(directory) == folder &&
+                        settings.Pins.Count(id => id == directoryPin) == 1,
+                        "dropping a directory and its shortcut creates one persistent Explorer folder pin");
+                    Directory.Delete(folder);
+                    File.WriteAllText(folder, "");
+                    bool unavailable = false;
+                    try { platform.Launch(directory); } catch (DirectoryNotFoundException) { unavailable = true; }
+                    Require(unavailable && Call(ui,"FindApp",directoryPin) != null,
+                        "a missing directory stays removable and a replacement file cannot be launched");
                     settings.Pins = originalPins;
                     SettingsStore.Save(settings);
                     Call(dock,"Render",screen); dock.UpdateLayout();

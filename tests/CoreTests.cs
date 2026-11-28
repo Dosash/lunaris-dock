@@ -29,6 +29,7 @@ internal class CoreTests
         var languages = new[] { "en", "ru", "de", "es", "zh-CN" };
         CheckLanguageResources(languages);
         var first = SettingsStore.Load();
+        Require(first.ShowStatusBar && first.IconDesigns.Count == 0, "new profiles show the status bar and retain original artwork");
         var defaultLanguage = first.Language;
         Require(first.ShowUpdateBadge, "new profile shows available release badges");
         Require(languages.Contains(defaultLanguage) && !first.LiquidGlass, "new profile has a supported language and standard material");
@@ -44,11 +45,13 @@ internal class CoreTests
         first.Language = "zh-CN";
         first.LiquidGlass = true;
         first.ShowUpdateBadge = false;
+        first.ShowStatusBar = false;
         first.Monitor = "saved-external-display";
         first.HideDockWhenCovered=false;
         first.HideWindowsStart=true;
         SettingsStore.Save(first);
         var restored = SettingsStore.Load();
+        Require(!restored.ShowStatusBar, "status bar visibility persists after restart");
         Require(!restored.ShowUpdateBadge, "disabled release badge survives a profile round-trip");
         Require(restored.Language == "zh-CN" && restored.LiquidGlass, "language and Liquid Glass survive a profile round-trip");
         Require(restored.Pins.SequenceEqual(new[] {"pinned-b","pinned-A"}), "deduplication preserves pin order");
@@ -66,6 +69,7 @@ internal class CoreTests
         Require(SettingsStore.Load().Pins.Count == 2, "last valid backup after truncated settings");
         File.WriteAllText(path, "{\"Pins\":[\"legacy\"]}");
         var old = SettingsStore.Load();
+        Require(old.ShowStatusBar && old.IconDesigns.Count == 0, "existing profiles gain the status bar and an empty icon collection");
         Require(old.ShowUpdateBadge, "pre-update profiles default to showing release badges");
         Require(old.Language == defaultLanguage && !old.LiquidGlass, "old profile inherits the installation or Windows language and keeps standard material");
         Require(old.Magnify && old.Size == 48 && old.Pins.Single() == "legacy", "migrate partial settings");
@@ -231,6 +235,7 @@ internal class CoreTests
                     refreshFor.Invoke(null, new object[] {settings});
                     Require((glass.GetValue(null,null) != null) == !SystemParameters.HighContrast,
                         "glass material follows the enabled Windows transparency and high-contrast settings");
+                    if (!SystemParameters.HighContrast) CheckStartGlass(settings);
                     simulated.SetValue("EnableTransparency", 0, RegistryValueKind.DWord);
                     refreshFor.Invoke(null, new object[] {settings});
                     Require(glass.GetValue(null,null) == null && settings.LiquidGlass,
@@ -283,6 +288,33 @@ internal class CoreTests
         Require(apply(new UserSettings{Theme="light"}) && !flag("Custom") && !flag("Dark") &&
                 brushes()[0].Color!=light[0].Color,"switching from a custom light palette restores all built-in roles");
         apply(new UserSettings{Theme="system"});
+    }
+
+    static void CheckStartGlass(UserSettings settings)
+    {
+        using (var platform = new PlatformServices(true))
+        using (var ui = new DesktopUi(platform,settings,delegate{},delegate{}))
+        {
+            var type = typeof(DesktopUi).Assembly.GetType("Lunaris.LaunchSurface",true);
+            var pad = (Window)Activator.CreateInstance(type,InternalInstance,null,new object[]{ui},null);
+            try
+            {
+                var glass = (Border)type.GetField("glass",InternalInstance).GetValue(pad);
+                glass.Child = null; // Sample the pane between controls, including the shadow behind it.
+                var sample = BitmapSource.Create(8,8,96,96,PixelFormats.Bgr32,null,new byte[8*8*4],32);
+                type.GetField("backdrop",InternalInstance).SetValue(pad,sample);
+                type.GetMethod("PaintGlass",InternalInstance).Invoke(pad,null);
+                var surface = (FrameworkElement)pad.Content;
+                surface.Measure(new Size(200,180));
+                surface.Arrange(new Rect(0,0,200,180)); surface.UpdateLayout();
+                var frame = new RenderTargetBitmap(200,180,96,96,PixelFormats.Pbgra32);
+                frame.Render(surface);
+                var pixel = new byte[4];
+                frame.CopyPixels(new Int32Rect(100,90,1,1),pixel,4,0);
+                Require(pixel[3] > 80 && pixel[3] < 240, "the Start pane with a refracted sample still shows the live background through its centre");
+            }
+            finally { pad.Close(); }
+        }
     }
 
     static void GlassRefraction()

@@ -79,7 +79,10 @@ namespace Lunaris
             // shortcut was uninstalled. Never recreate a directory removed by Windows.
             if (names != null)
             {
-                foreach (string key in saved.Placements.SelectMany(p => new[]{p.Id,p.Parent}).Distinct(Eq))
+                var pinnedFolders = (settings.Pins ?? Enumerable.Empty<string>())
+                    .Where(key => key != null && key.StartsWith(DockItem.FolderPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Select(key => key.Substring(DockItem.FolderPrefix.Length));
+                foreach (string key in saved.Placements.SelectMany(p => new[]{p.Id,p.Parent}).Concat(pinnedFolders).Distinct(Eq))
                 {
                     if (!key.StartsWith("start:",StringComparison.OrdinalIgnoreCase)) continue;
                     string path=key.Substring("start:".Length);

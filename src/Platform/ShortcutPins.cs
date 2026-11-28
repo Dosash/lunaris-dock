@@ -48,9 +48,11 @@ namespace Lunaris
                 {
                     try
                     {
-                        if (!AbsolutePath(file) || !File.Exists(file)) continue;
+                        if (!AbsolutePath(file)) continue;
                         string pin = null;
-                        if (IsExecutable(file)) pin = Path.GetFullPath(file);
+                        if (Directory.Exists(file)) pin = DockItem.DirectoryKey(file);
+                        else if (!File.Exists(file)) continue;
+                        else if (IsExecutable(file)) pin = Path.GetFullPath(file);
                         else if (file.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
                         {
                             if (shell == null) shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application", true));
@@ -70,7 +72,7 @@ namespace Lunaris
             return pins.ToArray();
         }
 
-        private static bool AbsolutePath(string path)
+        internal static bool AbsolutePath(string path)
         {
             return !String.IsNullOrEmpty(path) && (path.StartsWith(@"\\", StringComparison.Ordinal) ||
                 path.Length >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'));
@@ -92,6 +94,7 @@ namespace Lunaris
                 if (!String.IsNullOrWhiteSpace(target))
                 {
                     target = Environment.ExpandEnvironmentVariables(target);
+                    if (AbsolutePath(target) && Directory.Exists(target)) return DockItem.DirectoryKey(target);
                     if (AbsolutePath(target) && IsExecutable(target))
                     {
                         if (!File.Exists(target)) return null;

@@ -18,6 +18,7 @@ namespace Lunaris
     {
         private readonly DesktopUi ui;
         private readonly StackPanel strip = new StackPanel { Orientation = Orientation.Horizontal };
+        private readonly Grid surface;
         private readonly Border plate;
         private readonly TranslateTransform slide = new TranslateTransform();
         private readonly List<PinSlot> slots = new List<PinSlot>();
@@ -26,6 +27,8 @@ namespace Lunaris
         private bool themeChanged;
         private ScreenInfo screen;
         private double cell, art;
+        private const double HoverScale = 1.28;
+        private double HoverLift { get { return Math.Max(8, art * .13); } }
         private AnimationClock slideClock;
         private SlideCurve curve;
         private static PinDrag drag;
@@ -33,6 +36,8 @@ namespace Lunaris
         private string[] externalPins;
         private bool revealed;
         private ContextMenu shownMenu;
+        private FrameworkElement dismissedMenuTarget;
+        private int dismissTimestamp;
         private const string PinData = "Lunaris.Dock.App.v1";
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int w, int h, uint flags);
@@ -67,6 +72,7 @@ namespace Lunaris
             this.ui = ui; this.screen = screen;
             items = new DockItemMotion(strip);
             Closed += delegate {
+                if (shownMenu != null) shownMenu.IsOpen = false;
                 items.Cancel();
                 slideClock = null;
                 slide.ApplyAnimationClock(TranslateTransform.YProperty, null);
@@ -82,25 +88,43 @@ namespace Lunaris
             AllowsTransparency = true; Background = Brushes.Transparent;
             UseLayoutRounding = true; SnapsToDevicePixels = true;
             SourceInitialized += delegate { Visuals.ToolWindow(this, true); };
+            // WPF dismisses a captured menu on button-down and requests a new one
+            // on button-up. Ignore that second request on the original menu target.
+            PreviewMouseRightButtonDown += delegate(object sender, MouseButtonEventArgs e) {
+                if (e.Timestamp != dismissTimestamp) dismissedMenuTarget = null;
+            };
+            ContextMenuOpening += delegate(object sender, ContextMenuEventArgs e) {
+                if (e.CursorLeft >= 0 && dismissedMenuTarget != null &&
+                    new Rect(dismissedMenuTarget.RenderSize).Contains(Mouse.GetPosition(dismissedMenuTarget)))
+                    e.Handled = true;
+                else Activate(); // Foreground capture lets an outside click dismiss the menu.
+                dismissedMenuTarget = null;
+            };
+            Deactivated += delegate { if (shownMenu != null) shownMenu.IsOpen = false; };
 
-            plate = new Border {
-                BorderThickness = new Thickness(1), RenderTransform = slide,
-                CornerRadius = new CornerRadius(15), HorizontalAlignment = HorizontalAlignment.Center,
+            surface = new Grid { RenderTransform = slide, HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(9, 0, 9, 5),
-                Padding = new Thickness(5, 2, 5, 2), Effect = Visuals.Shadow(10, 3, .45), Child = strip };
+                Background = Brushes.Transparent };
+            // Only the backdrop casts a shadow. The artwork can paint above the
+            // rim without passing through an effect rendered at the plate size.
+            plate = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(15),
+                Effect = Visuals.Shadow(10, 3, .45), IsHitTestVisible = false };
+            strip.Margin = new Thickness(6, 3, 6, 3);
+            surface.Children.Add(plate);
+            surface.Children.Add(strip);
             // Layered windows hit-test their alpha channel. Keep the edge truly transparent
             // even when the soft shadow would leave one almost invisible pixel there.
-            Content = new Border { Child = plate, ClipToBounds = true, Margin = new Thickness(0, 0, 0, 2) };
+            Content = new Border { Child = surface, ClipToBounds = true, Margin = new Thickness(0, 0, 0, 2) };
             ApplyTheme();
-            AttachMenu(plate, FillMainMenu);
-            plate.AllowDrop = true;
-            plate.PreviewDragEnter += TrackDrop;
-            plate.PreviewDragOver += TrackDrop;
-            plate.PreviewDrop += FinishDrop;
-            plate.DragLeave += delegate(object sender, DragEventArgs e) {
-                if (!new Rect(plate.RenderSize).Contains(e.GetPosition(plate))) ClearExternalDrop();
-                if (drag != null && drag.Surface == this && !new Rect(plate.RenderSize).Contains(e.GetPosition(plate)))
-                    RestoreOrder();
+            AttachMenu(surface, FillMainMenu);
+            surface.AllowDrop = true;
+            surface.PreviewDragEnter += TrackDrop;
+            surface.PreviewDragOver += TrackDrop;
+            surface.PreviewDrop += FinishDrop;
+            surface.DragLeave += delegate(object sender, DragEventArgs e) {
+                if (new Rect(surface.RenderSize).Contains(e.GetPosition(surface))) return;
+                ClearExternalDrop();
+                if (drag != null && drag.Surface == this) RestoreOrder();
             };
         }
 
@@ -209,44 +233,55 @@ namespace Lunaris
             slots.Clear();
             art = nextArt;
             cell = Math.Ceiling(art * 1.18 + 4);
-            var pinned = ui.Settings.Pins.Select(ui.FindApp).Where(a => a != null).ToList();
-            var used = new HashSet<string>(pinned.Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+            var pinned = ui.DockPins();
+            var used = new HashSet<string>(pinned.Where(p => p.App != null).Select(p => p.App.Id), StringComparer.OrdinalIgnoreCase);
             var running = ui.Windows.Where(w => !String.IsNullOrWhiteSpace(w.AppId)).Select(w => ui.FindApp(w.AppId))
-                .Where(a => a != null && used.Add(a.Id)).OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase);
-            var apps = pinned.Concat(running).ToList();
-            int limit = Math.Max(1, (int)((bounds.Width / screen.Scale - 65) / cell) - 1);
-            bool overflow = apps.Count > limit;
-            int visibleCount = overflow ? Math.Max(0, limit - 1) : apps.Count;
+                .Where(a => a != null && used.Add(a.Id)).OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(a => new DockItem { Key = a.Id, App = a });
+            var entries = pinned.Concat(running).ToList();
+            double space = bounds.Width / screen.Scale - 65 - cell;
+            bool overflow = entries.Count > 0 && entries.Sum(entry => ItemWidth(entry)) > space;
+            if (overflow) space -= cell;
             MakeButton(null);
-            if (apps.Count > 0) Separator("start-line");
-            for (int i = 0; i < visibleCount; ++i)
+            if (entries.Count > 0) Separator("start-line");
+            int visibleCount = 0;
+            foreach (var entry in entries)
             {
-                if (i == pinned.Count && i > 0) Separator("running-line");
-                MakeButton(apps[i]);
+                space -= ItemWidth(entry);
+                if (space < 0) break;
+                if (visibleCount == pinned.Count && visibleCount > 0) Separator("running-line");
+                if (entry.IsSeparator) MakeSeparator(entry); else MakeButton(entry);
+                visibleCount++;
             }
             if (overflow)
             {
                 var more = Visuals.Button("Dock.More", Loc.Get("MoreApps"));
                 more.Tag = "overflow";
-                more.Width = cell;
-                var glyph = Visuals.Label("•••", 16, "#E4E6F1"); glyph.Foreground = Appearance.Text;
+                more.Width = more.Height = cell;
+                var glyph = Visuals.Label("•••", Math.Max(10, art * .40), "#E4E6F1"); glyph.Foreground = Appearance.Text;
                 glyph.HorizontalAlignment = HorizontalAlignment.Center;
-                more.Content = glyph;
+                glyph.VerticalAlignment = VerticalAlignment.Center;
+                var tile = new Border { Width = art, Height = art, CornerRadius = new CornerRadius(art * .22),
+                    Background = Appearance.Selection, Child = glyph };
+                more.Content = MagnifyingArt(more, tile);
                 more.Click += delegate {
                     var menu = Visuals.Menu();
-                    foreach (var entry in apps.Skip(visibleCount))
+                    foreach (var entry in entries.Skip(visibleCount))
                     {
                         var outer = new MenuItem { Header = entry.Name, FontFamily = UiFonts.Text };
-                        FillAppMenu(outer, entry);
+                        FillItemMenu(outer, entry);
                         menu.Items.Add(outer);
                     }
                     Popup(more, menu);
                 };
                 strip.Children.Add(more);
             }
-            plate.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
-            double width = Math.Min(bounds.Width, Math.Ceiling((plate.DesiredSize.Width + 2) * screen.Scale));
-            double height = Math.Min(bounds.Height, Math.Ceiling((cell + 23) * screen.Scale));
+            surface.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+            double width = Math.Min(bounds.Width, Math.Ceiling((surface.DesiredSize.Width + 2) * screen.Scale));
+            // RenderTransforms do not participate in WPF measure. Reserve their
+            // maximum rise plus the Start badge, a 3-DIP drag lift and rounding.
+            double headroom = Math.Ceiling(art * (HoverScale - 1) + HoverLift + 6);
+            double height = Math.Min(bounds.Height, Math.Ceiling((surface.DesiredSize.Height + headroom + 2) * screen.Scale));
             Action<double> place = w => screen.Place(this, new Rect(Math.Round(bounds.Left + (bounds.Width-w)/2), bounds.Bottom-height, w, height));
             // Allow departing icons to finish inside the old HWND. Transparent margins
             // on either side of the centred plate still pass clicks to the desktop.
@@ -261,20 +296,34 @@ namespace Lunaris
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) });
         }
 
-        private void MakeButton(AppEntry app)
+        private double ItemWidth(DockItem item) { return item.IsSeparator ? Math.Max(16, Math.Round(cell * .4)) : cell; }
+
+        private void MakeSeparator(DockItem item)
         {
-            bool first = app == null;
-            var button = Visuals.Button(first ? "OpenLaunchpad" : "Dock.App", first ? Loc.Get("Start") : app.Name);
-            button.Tag = first ? "start" : "app:" + app.Id;
+            var button = Visuals.Button("Dock.Separator", item.Name);
+            button.Tag = item.Key;
+            button.Focusable = false;
+            button.Width = ItemWidth(item); button.Height = cell; button.Cursor = Cursors.SizeWE;
+            button.Content = new Border { Width = 2, Height = art * .74, Background = Appearance.Muted,
+                CornerRadius = new CornerRadius(1), Opacity = .75, VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center };
+            AttachMenu(button, menu => FillItemMenu(menu, item));
+            EnableDrag(button, item.Key);
+            strip.Children.Add(button);
+        }
+
+        private void MakeButton(DockItem item)
+        {
+            bool first = item == null;
+            var app = first ? null : item.App;
+            bool folder = !first && (item.Folder != null || app.DirectoryPath != null);
+            var target = ui.IconFor(app, first ? null : item.Folder, first ? null : item.Children);
+            var button = Visuals.Button(first ? "OpenLaunchpad" : folder ? "Dock.Folder" : "Dock.App", first ? Loc.Get("Start") : item.Name);
+            button.Tag = first ? "start" : "app:" + (app == null ? item.Key : app.Id);
             button.Focusable = false;
             button.Width = cell; button.Height = cell;
             var canvas = new Grid();
-            var scale = new ScaleTransform(1, 1);
-            var raise = new TranslateTransform();
-            var group = new TransformGroup(); group.Children.Add(scale); group.Children.Add(raise);
-            var image = new Border { Child = first ? Visuals.LaunchIcon(art) : Visuals.Icon(app, art),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 2), RenderTransform = group, RenderTransformOrigin = new Point(.5, .9) };
+            var image = MagnifyingArt(button, ui.IconArt(target, art));
             if (first && ui.Settings.ShowUpdateBadge && ui.AvailableUpdate != null)
             {
                 var artwork = image.Child;
@@ -294,22 +343,21 @@ namespace Lunaris
                 button.ToolTip = Visuals.Tip(Loc.Get("Start") + "\n" + status);
             }
             canvas.Children.Add(image);
-            if (!first && ui.WindowsFor(app.Id).Count > 0)
+            if (app != null && !folder && ui.WindowsFor(app.Id).Count > 0)
                 canvas.Children.Add(new Ellipse { Height = 3, Width = 3, Fill = Appearance.Text,
                     VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center });
             button.Content = canvas;
-            button.MouseEnter += delegate {
-                if (ui.Settings.Magnify) AnimateIcon(scale, raise, 1.20, -3);
-            };
-            button.MouseLeave += delegate { AnimateIcon(scale, raise, 1, 0); };
+            ui.MarkIconButton(button, target);
             if (first)
             {
-                button.Click += delegate { ui.ToggleLaunchpad(screen); };
-                AttachMenu(button, FillMainMenu);
+                button.Click += delegate { if (ui.EditingIcons) ui.EditIcon(target,screen); else ui.ToggleLaunchpad(screen); };
+                AttachMenu(button, menu => { FillMainMenu(menu); menu.Items.Insert(1,ui.IconEditCommand(target,screen)); });
             }
             else
             {
                 button.Click += delegate {
+                    if (ui.EditingIcons) { ui.EditIcon(target,screen); return; }
+                    if (item.Folder != null) { ui.ShowLaunchpad(screen, item.Folder.Id); return; }
                     var windows = ui.WindowsFor(app.Id);
                     if (windows.Count == 0) ui.Launch(app);
                     else if (windows.Count == 1) ui.Activate(windows[0]);
@@ -319,10 +367,32 @@ namespace Lunaris
                         Popup(button, menu);
                     }
                 };
-                AttachMenu(button, delegate(ContextMenu m) { FillAppMenu(m, app); });
-                EnableDrag(button, app);
+                AttachMenu(button, menu => FillItemMenu(menu, item));
+                EnableDrag(button, item.Key);
             }
             strip.Children.Add(button);
+        }
+
+        private Border MagnifyingArt(Button button, UIElement artwork)
+        {
+            var scale = new ScaleTransform(1, 1);
+            var lift = new TranslateTransform();
+            var transforms = new TransformGroup();
+            transforms.Children.Add(scale);
+            transforms.Children.Add(lift);
+            button.MouseEnter += delegate {
+                if (ui.Settings.Magnify && drag == null) {
+                    Panel.SetZIndex(button, 1);
+                    AnimateIcon(scale, lift, HoverScale, -HoverLift);
+                }
+            };
+            button.MouseLeave += delegate {
+                if (drag == null) Panel.SetZIndex(button, 0);
+                AnimateIcon(scale, lift, 1, 0);
+            };
+            return new Border { Child = artwork, Background = Brushes.Transparent,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 2), RenderTransform = transforms, RenderTransformOrigin = new Point(.5, 1) };
         }
 
         private void AnimateIcon(ScaleTransform scale, TranslateTransform raise, double factor, double y)
@@ -375,9 +445,9 @@ namespace Lunaris
                 slot.Offset.BeginAnimation(TranslateTransform.XProperty, Ease(previous, x, 155));
         }
 
-        private void EnableDrag(Button button, AppEntry app)
+        private void EnableDrag(Button button, string key)
         {
-            var slot = new PinSlot { Button = button, Id = ui.PinKey(app.Id) ?? app.Id };
+            var slot = new PinSlot { Button = button, Id = key };
             button.AllowDrop = true;
             button.RenderTransform = slot.Offset;
             slots.Add(slot);
@@ -433,7 +503,8 @@ namespace Lunaris
             }
             var picked = slots.FirstOrDefault(s => DesktopUi.IdEqual(s.Id,drag.Id));
             if (picked != null) {
-                double x = Math.Max(0, Math.Min(strip.ActualWidth-cell,pointer-cell*drag.Grip));
+                double width = picked.Button.ActualWidth;
+                double x = Math.Max(0, Math.Min(strip.ActualWidth-width,pointer-width*drag.Grip));
                 Shift(picked,x-picked.Left,false);
             }
             e.Effects = DragDropEffects.Move;
@@ -447,7 +518,7 @@ namespace Lunaris
             foreach (var slot in slots)
             {
                 if (!ui.Pinned(slot.Id) || DesktopUi.IdEqual(slot.Id, exclude)) continue;
-                if (pointer < slot.Left + cell / 2) { after = false; return slot.Id; }
+                if (pointer < slot.Left + slot.Button.ActualWidth / 2) { after = false; return slot.Id; }
                 last = slot.Id;
             }
             after = true;
@@ -465,11 +536,16 @@ namespace Lunaris
                 (e.AllowedEffects & DragDropEffects.Copy);
             try
             {
-                if (effect == DragDropEffects.None || !e.Data.GetDataPresent(DataFormats.FileDrop, false)) return;
+                if (effect == DragDropEffects.None) return;
                 if (commit || !Object.ReferenceEquals(externalData, e.Data))
                 {
-                    var files = e.Data.GetData(DataFormats.FileDrop, false) as string[];
-                    externalPins = files == null ? null : ui.Platform.ResolveDrop(files);
+                    if (ui.DraggedFolderPin != null) externalPins = new[] { ui.DraggedFolderPin };
+                    else
+                    {
+                        if (!e.Data.GetDataPresent(DataFormats.FileDrop, false)) return;
+                        var files = e.Data.GetData(DataFormats.FileDrop, false) as string[];
+                        externalPins = files == null ? null : ui.Platform.ResolveDrop(files);
+                    }
                     externalData = e.Data;
                 }
                 if (externalPins == null || externalPins.Length == 0) return;
@@ -500,11 +576,13 @@ namespace Lunaris
                 int index = order.FindIndex(id => DesktopUi.IdEqual(id,slot.Id));
                 return index < 0 ? Int32.MaxValue : index;
             }).ToArray();
+            double adjustment = 0;
             for (int i=0; i<reordered.Length; i++)
             {
                 var slot = reordered[i];
                 bool picked = drag.Surface == this && DesktopUi.IdEqual(slot.Id,drag.Id);
-                if (!picked) Shift(slot, slots[i].Left-slot.Left, true);
+                if (!picked) Shift(slot, slots[i].Left + adjustment - slot.Left, true);
+                adjustment += slot.Button.ActualWidth - slots[i].Button.ActualWidth;
                 slot.Offset.Y = picked ? -3 : 0;
                 Panel.SetZIndex(slot.Button, picked ? 1 : 0);
             }
@@ -531,6 +609,12 @@ namespace Lunaris
         {
             var menu = Visuals.Menu();
             menu.Placement = PlacementMode.Top;
+            menu.AddHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent, new MouseButtonEventHandler(delegate(object s, MouseButtonEventArgs e) {
+                if (e.ChangedButton == MouseButton.Right && new Rect(element.RenderSize).Contains(e.GetPosition(element))) {
+                    dismissedMenuTarget = element;
+                    dismissTimestamp = e.Timestamp;
+                }
+            }), true);
             menu.Opened += delegate {
                 shownMenu = menu; menu.Items.Clear(); populate(menu);
             };
@@ -540,6 +624,7 @@ namespace Lunaris
 
         private void Popup(FrameworkElement anchor, ContextMenu menu)
         {
+            Activate();
             shownMenu = menu; menu.PlacementTarget = anchor; menu.Placement = PlacementMode.Top;
             menu.Closed += delegate { if (shownMenu == menu) shownMenu = null; };
             menu.IsOpen = true;
@@ -556,20 +641,36 @@ namespace Lunaris
         private void FillMainMenu(ContextMenu menu)
         {
             menu.Items.Add(Visuals.MenuItem(Loc.Get("OpenStart"), delegate { ui.ShowLaunchpad(screen); }));
+            bool after;
+            string anchor = DropAnchor(Mouse.GetPosition(strip).X, null, out after);
+            AddSeparatorCommand(menu, anchor, after);
+            menu.Items.Add(ui.IconEditModeCommand());
             menu.Items.Add(SettingsMenuItem());
             menu.Items.Add(new Separator());
             menu.Items.Add(Visuals.MenuItem(Loc.Get("Quit"), ui.Exit));
         }
 
-        private void FillAppMenu(ItemsControl menu, AppEntry app)
+        private void AddSeparatorCommand(ItemsControl menu, string anchor, bool after)
         {
-            var windows = ui.WindowsFor(app.Id);
-            FillWindows(menu, windows);
-            if (windows.Count > 0) menu.Items.Add(new Separator());
-            menu.Items.Add(Visuals.MenuItem(Loc.Get("LaunchApp"), delegate { ui.Launch(app); }));
-            menu.Items.Add(Visuals.MenuItem(ui.Pinned(app.Id) ? Loc.Get("Unpin") : Loc.Get("Pin"),
-                delegate { ui.TogglePin(app); }));
-            string pin = ui.PinKey(app.Id);
+            menu.Items.Add(Visuals.MenuItem(Loc.Get("AddSeparator"), delegate { ui.AddSeparator(anchor, after); }));
+        }
+
+        private void FillItemMenu(ItemsControl menu, DockItem item)
+        {
+            if (!item.IsSeparator) menu.Items.Add(ui.IconEditCommand(ui.IconFor(item.App,item.Folder,item.Children),screen));
+            string pin = ui.PinKey(item.Key);
+            if (item.App != null)
+            {
+                var windows = ui.WindowsFor(item.App.Id);
+                FillWindows(menu, windows);
+                if (windows.Count > 0) menu.Items.Add(new Separator());
+                menu.Items.Add(Visuals.MenuItem(Loc.Get(item.App.DirectoryPath == null ? "LaunchApp" : "OpenFolder"),
+                    delegate { ui.Launch(item.App); }));
+            }
+            else if (item.Folder != null)
+                menu.Items.Add(Visuals.MenuItem(Loc.Get("OpenFolder"), delegate { ui.ShowLaunchpad(screen, item.Folder.Id); }));
+            string toggle = item.IsSeparator ? "RemoveSeparator" : pin != null ? "Unpin" : "Pin";
+            menu.Items.Add(Visuals.MenuItem(Loc.Get(toggle), delegate { ui.ToggleDockPin(item.Key); }));
             if (pin != null && ui.Settings.Pins.Count > 1)
             {
                 int i = ui.Settings.Pins.FindIndex(id => DesktopUi.IdEqual(id, pin));
@@ -579,6 +680,7 @@ namespace Lunaris
                     delegate { ui.DropPin(pin, ui.Settings.Pins[i + 1], true); }));
             }
             menu.Items.Add(new Separator());
+            AddSeparatorCommand(menu, pin, true);
             menu.Items.Add(SettingsMenuItem());
             menu.Items.Add(Visuals.MenuItem(Loc.Get("Quit"), ui.Exit));
         }

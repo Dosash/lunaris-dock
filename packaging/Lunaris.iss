@@ -1,5 +1,5 @@
 ﻿#ifndef ProductVersion
-  #define ProductVersion "1.3.1"
+  #define ProductVersion "1.3.1.6"
 #endif
 
 [Setup]
@@ -64,6 +64,7 @@ Name: "startup"; Description: "{cm:StartAtSignIn}"; Check: not OwnsStartup; Flag
 [Files]
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "languages\ChineseSimplified-LICENSE.txt"; DestDir: "{app}\Licenses"; Flags: ignoreversion
+Source: "Lucide-LICENSE.txt"; DestDir: "{app}\Licenses"; Flags: ignoreversion
 Source: "..\build\LunarisDock.exe"; DestDir: "{app}"; Flags: ignoreversion
 #if FileExists(SourcePath + "\..\build\LunarisDock.exe.config")
 Source: "..\build\LunarisDock.exe.config"; DestDir: "{app}"; Flags: ignoreversion

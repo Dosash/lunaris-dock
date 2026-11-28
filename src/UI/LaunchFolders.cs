@@ -4,9 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace Lunaris
 {
@@ -91,27 +89,14 @@ namespace Lunaris
 
         private void OpenItem(LibraryItem item)
         {
-            if (item.IsFolder) Navigate(item.Id, null);
+            if (ui.EditingIcons) ui.EditIcon(IconForItem(item),ui.ActiveMonitor);
+            else if (item.IsFolder) Navigate(item.Id, null);
             else ui.Launch(item.App);
         }
 
-        private UIElement FolderArt(LibraryItem folder)
+        private IconTarget IconForItem(LibraryItem item)
         {
-            var icon = new Grid { Width = iconSize, Height = iconSize, IsHitTestVisible = false };
-            string top = folder.IsSystem ? "#95DDF9" : "#ADBCFC";
-            string bottom = folder.IsSystem ? "#449EDB" : "#788AD7";
-            icon.Children.Add(new Border { Width = iconSize * .56, Height = iconSize * .30,
-                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(1,iconSize*.10,0,0), CornerRadius = new CornerRadius(iconSize*.09),
-                Background = Visuals.Brush(bottom) });
-            var preview = new UniformGrid { Rows = 2, Columns = 2, Margin = new Thickness(iconSize*.12,iconSize*.07,iconSize*.12,iconSize*.07) };
-            foreach (var child in library.Children(folder.Id).Where(i => !i.IsFolder).Take(4))
-                preview.Children.Add(Visuals.Icon(child.App, iconSize*.25));
-            icon.Children.Add(new Border { Margin = new Thickness(0,iconSize*.24,0,iconSize*.07),
-                Background = new LinearGradientBrush(Visuals.Brush(top).Color,Visuals.Brush(bottom).Color,90),
-                BorderBrush = Visuals.Brush("#50FFFFFF"), BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(iconSize*.10), Child = preview });
-            return icon;
+            return ui.IconFor(item.App, item.IsFolder ? item : null, item.IsFolder ? library.Children(item.Id) : null);
         }
 
         private static MenuItem LibraryAction(ItemsControl menu, string id, string caption, Action action)
@@ -150,6 +135,8 @@ namespace Lunaris
         private void RemoveFolder(LibraryItem item)
         {
             if (!library.DeleteFolder(item.Id)) return;
+            ui.Settings.IconDesigns.RemoveAll(design => DesktopUi.IdEqual(design.Key,item.Id));
+            ui.Settings.Pins.RemoveAll(key => DesktopUi.IdEqual(key, DockItem.FolderPrefix + item.Id));
             ui.PersistLibrary(); Navigate(item.ParentId, null);
         }
 
@@ -159,9 +146,10 @@ namespace Lunaris
             tile.ContextMenu = menu;
             menu.Opened += delegate {
                 menu.Items.Clear();
+                menu.Items.Add(ui.IconEditCommand(IconForItem(item),ui.ActiveMonitor));
                 if (item.IsFolder)
                 {
-                    LibraryAction(menu, "Launchpad.Folder.Open", Loc.Get("OpenFolder"), delegate { OpenItem(item); });
+                    LibraryAction(menu, "Launchpad.Folder.Open", Loc.Get("OpenFolder"), delegate { Navigate(item.Id,null); });
                     LibraryAction(menu, "Launchpad.Folder.AddApps", Loc.Get("AddAppsMenu"), delegate { AddApps(item.Id); });
                     if (!item.IsSystem)
                     {
@@ -169,11 +157,9 @@ namespace Lunaris
                         LibraryAction(menu, "Launchpad.Folder.Remove", Loc.Get("RemoveFolder"), delegate { RemoveFolder(item); });
                     }
                 }
-                else
-                {
-                    LibraryAction(menu, "Launchpad.Item.Pin", ui.Pinned(item.App.Id) ? Loc.Get("Unpin") : Loc.Get("Pin"),
-                        delegate { ui.TogglePin(item.App); RefreshCatalog(); });
-                }
+                string key = item.IsFolder ? DockItem.FolderPrefix + item.Id : item.App.Id;
+                LibraryAction(menu, "Launchpad.Item.Pin", ui.Pinned(key) ? Loc.Get("Unpin") : Loc.Get("Pin"),
+                    delegate { ui.ToggleDockPin(key); RefreshCatalog(); });
                 if (library.Find(item.Id) == null) return;
                 menu.Items.Add(new Separator());
                 LibraryAction(menu, "Launchpad.Item.Move", Loc.Get("MoveToFolderMenu"), delegate { MovePicker(item); });
@@ -260,8 +246,13 @@ namespace Lunaris
                 if (Math.Abs(current.X - down.X) < SystemParameters.MinimumHorizontalDragDistance &&
                     Math.Abs(current.Y - down.Y) < SystemParameters.MinimumVerticalDragDistance) return;
                 armed = false; dragging = true; Mouse.Capture(null);
-                try { DragDrop.DoDragDrop(tile, new DataObject(LibraryDragFormat, item.Id), DragDropEffects.Move); }
-                finally { dragging = false; }
+                var effects = DragDropEffects.Move;
+                if (item.IsFolder) {
+                    ui.DraggedFolderPin = DockItem.FolderPrefix + item.Id;
+                    effects |= DragDropEffects.Link;
+                }
+                try { DragDrop.DoDragDrop(tile, new DataObject(LibraryDragFormat, item.Id), effects); }
+                finally { ui.DraggedFolderPin = null; dragging = false; }
             };
             tile.AllowDrop = true;
             tile.DragOver += delegate(object sender, DragEventArgs e) {

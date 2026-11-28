@@ -12,6 +12,7 @@ namespace Lunaris
     public sealed class PlatformServices : IDisposable
     {
         private readonly bool preview;
+        internal bool Preview { get { return preview; } }
         private readonly ShellCatalog catalog = new ShellCatalog();
         private readonly WindowList windows;
         private readonly TaskbarGuard guard = new TaskbarGuard();
@@ -149,6 +150,7 @@ namespace Lunaris
         public void Activate(WindowEntry window) { if (window != null) WindowList.Focus(window.Handle); }
         public void FocusWindow(IntPtr hwnd) { WindowList.Focus(hwnd); }
         public bool IsFullscreen() { return windows.IsFullscreen(); }
+        internal IntPtr FullscreenMonitor() { return windows.FullscreenMonitor(false); }
         internal HashSet<string> CoveredScreens(ScreenInfo[] screens) { return windows.CoveredScreens(screens); }
 
         internal void ApplyWindowsStart(bool redirect)

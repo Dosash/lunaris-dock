@@ -14,7 +14,7 @@ using System.Windows.Threading;
 
 namespace Lunaris
 {
-    public sealed class DesktopUi : IDisposable
+    public sealed partial class DesktopUi : IDisposable
     {
         internal readonly PlatformServices Platform;
         internal readonly UserSettings Settings;
@@ -24,6 +24,7 @@ namespace Lunaris
         private sealed class Surface
         {
             internal DockSurface Dock;
+            internal StatusBarWindow Status;
             internal ScreenInfo Screen;
             internal string RenderKey;
             internal long RevealUntil;
@@ -36,6 +37,12 @@ namespace Lunaris
         private bool hasPreviousCursor;
         internal ScreenInfo[] Monitors { get; private set; }
         internal ScreenInfo ActiveMonitor { get; private set; }
+        internal double StatusBarBottom(ScreenInfo screen)
+        {
+            Surface entry;
+            return surfaces.TryGetValue(screen.Id, out entry) && entry.Status != null ?
+                entry.Status.PhysicalBottom : screen.Bounds.Top;
+        }
         internal double DockTopPixels
         {
             get
@@ -58,6 +65,7 @@ namespace Lunaris
         internal bool CatalogLoading { get { return reading; } }
         internal List<AppEntry> Catalog = new List<AppEntry>();
         internal List<WindowEntry> Windows = new List<WindowEntry>();
+        internal string DraggedFolderPin;
         private Dictionary<string,AppEntry> byId = new Dictionary<string,AppEntry>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, AppEntry> filePins = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
 
@@ -290,9 +298,11 @@ namespace Lunaris
                 selected.FirstOrDefault(s => IdEqual(s.Id, ActiveMonitor.Id)) ?? selected[0];
             foreach (var stale in surfaces.Keys.Where(id => !selected.Any(s => IdEqual(s.Id,id))).ToArray())
             {
+                if (surfaces[stale].Status != null) surfaces[stale].Status.Close();
                 surfaces[stale].Dock.Close();
                 surfaces.Remove(stale);
             }
+            IntPtr fullscreen = Settings.ShowStatusBar ? Platform.FullscreenMonitor() : IntPtr.Zero;
             foreach (var screen in selected)
             {
                 Surface entry;
@@ -302,6 +312,10 @@ namespace Lunaris
                     surfaces.Add(screen.Id, entry);
                 }
                 if (!entry.Screen.SameLayout(screen)) { entry.Screen = screen; entry.RenderKey = null; }
+                if (Settings.ShowStatusBar) {
+                    if (entry.Status == null) entry.Status = new StatusBarWindow(this,screen);
+                    entry.Status.Update(screen,fullscreen != IntPtr.Zero && fullscreen == screen.Handle);
+                } else if (entry.Status != null) { entry.Status.Close(); entry.Status = null; }
             }
             if (changed && preferences != null) preferences.RefreshMonitors();
             return changed;
@@ -372,19 +386,28 @@ namespace Lunaris
 
         internal void ShowLaunchpad(ScreenInfo screen)
         {
+            ShowLaunchpad(screen, LaunchLibrary.Root);
+        }
+
+        internal void ShowLaunchpad(ScreenInfo screen, string folderId)
+        {
             if (disposed || screen == null) return;
+            if (iconEditor != null) { iconEditor.Activate(); return; }
             ActiveMonitor = screen;
             if (preferences != null) preferences.Close();
             if (launchpad == null) launchpad = new LaunchSurface(this);
             Surface entry;
             if (surfaces.TryGetValue(screen.Id, out entry)) entry.Dock.SetRevealed(true, false);
-            launchpad.Open(screen);
+            launchpad.Open(screen, folderId);
         }
 
         internal void LaunchpadClosed() { UpdateVisibility(true); }
 
         internal AppEntry FindApp(string id)
         {
+            if (id.StartsWith(DockItem.DirectoryPrefix, StringComparison.OrdinalIgnoreCase)) return DockItem.DirectoryApp(id);
+            if (id.StartsWith(DockItem.FolderPrefix, StringComparison.OrdinalIgnoreCase) ||
+                id.StartsWith(DockItem.SeparatorPrefix, StringComparison.OrdinalIgnoreCase)) return null;
             AppEntry entry;
             if (ShellCatalog.IsExecutable(id))
             {
@@ -403,6 +426,28 @@ namespace Lunaris
             return entry;
         }
 
+        internal List<DockItem> DockPins()
+        {
+            LaunchLibrary library;
+            return DockPins(false, out library);
+        }
+
+        internal List<DockItem> DockPins(bool includeLibrary, out LaunchLibrary library)
+        {
+            var pins = Settings.Pins.Select(key => new DockItem { Key = key, App = FindApp(key) }).ToList();
+            var folders = pins.Where(item => item.Key.StartsWith(DockItem.FolderPrefix, StringComparison.OrdinalIgnoreCase)).ToList();
+            library = includeLibrary || folders.Count > 0 ? new LaunchLibrary(Settings, Catalog.Concat(pins.Select(p => p.App))) : null;
+            foreach (var item in folders)
+            {
+                var folder = library.Find(item.Key.Substring(DockItem.FolderPrefix.Length));
+                if (folder == null || !folder.IsFolder) continue;
+                item.Folder = folder;
+                item.Children = library.Children(folder.Id);
+            }
+            pins.RemoveAll(item => item.App == null && item.Folder == null && !item.IsSeparator);
+            return pins;
+        }
+
         internal static bool IdEqual(string a, string b) { return String.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
         internal string PinKey(string id)
         {
@@ -411,19 +456,29 @@ namespace Lunaris
         internal bool Pinned(string id) { return PinKey(id) != null; }
         internal List<WindowEntry> WindowsFor(string id) { return Windows.Where(w => IdEqual(w.AppId, id)).ToList(); }
 
-        internal void TogglePin(AppEntry app)
+        internal void ToggleDockPin(string id)
         {
-            string key = PinKey(app.Id);
+            string key = PinKey(id);
             if (key != null) Settings.Pins.RemoveAll(pin => IdEqual(pin, key));
-            else Settings.Pins.Add(app.Id);
+            else Settings.Pins.Add(id);
             Settings.InitializePins = false;
             Changed();
         }
 
         internal void DropPin(string source, string target, bool after)
         {
-            if (IdEqual(source, target) || FindApp(source) == null) return;
+            if (IdEqual(source, target) || (!Pinned(source) && FindApp(source) == null)) return;
             Settings.Pins.RemoveAll(pin => IdEqual(pin, source));
+            InsertPin(source, target, after);
+        }
+
+        internal void AddSeparator(string target, bool after)
+        {
+            InsertPin(DockItem.SeparatorPrefix + Guid.NewGuid().ToString("N"), target, after);
+        }
+
+        private void InsertPin(string source, string target, bool after)
+        {
             int index = Settings.Pins.FindIndex(pin => IdEqual(pin, target));
             if (index < 0) Settings.Pins.Add(source);
             else Settings.Pins.Insert(index + (after ? 1 : 0), source);
@@ -454,7 +509,12 @@ namespace Lunaris
             catch (Exception ex) { Alert(Loc.Get("ApplyError"), ex); }
         }
 
-        internal void PersistLibrary() { Persist(); }
+        internal void PersistLibrary()
+        {
+            Persist();
+            InvalidateDocks();
+            RenderDocks(false);
+        }
 
         internal void ResizeDock(double size)
         {
@@ -554,9 +614,13 @@ namespace Lunaris
             FlushSize();
             if (timer != null) timer.Stop();
             if (pointerTimer != null) pointerTimer.Stop();
+            if (iconEditor != null) iconEditor.Close();
             if (preferences != null) preferences.CloseImmediately();
             if (launchpad != null) launchpad.Close();
-            foreach (var entry in surfaces.Values) entry.Dock.Close();
+            foreach (var entry in surfaces.Values) {
+                if (entry.Status != null) entry.Status.Close();
+                entry.Dock.Close();
+            }
             surfaces.Clear();
         }
     }

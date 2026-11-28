@@ -172,6 +172,8 @@
         <Border Style="{StaticResource Group}"><StackPanel>
           <CheckBox x:Name="ReplaceTaskbar" AutomationProperties.AutomationId="ReplaceTaskbar" Content="{DynamicResource Strings.ReplaceTaskbar}"/>
           <Border Style="{StaticResource Line}"/>
+          <CheckBox x:Name="ShowStatusBar" AutomationProperties.AutomationId="ShowStatusBar" Content="{DynamicResource Strings.ShowStatusBar}" ToolTip="{DynamicResource Strings.StatusBarHint}"/>
+          <Border Style="{StaticResource Line}"/>
           <CheckBox x:Name="HideWindowsStart" AutomationProperties.AutomationId="HideWindowsStart" Content="{DynamicResource Strings.ReplaceStart}"
                     ToolTip="{DynamicResource Strings.ReplaceStartHint}"/>
           <Border Style="{StaticResource Line}"/>

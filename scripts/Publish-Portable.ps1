@@ -17,7 +17,7 @@ $zipName = "LunarisDock-$PackageVersion-x64-Portable.zip"
 $exeName = 'LunarisDock.exe'
 $configName = 'LunarisDock.exe.config'
 $launcher = 'Тестовый запуск.cmd'
-$files = @($exeName, $configName, 'README.txt', 'LICENSE', $launcher)
+$files = @($exeName, $configName, 'README.txt', 'LICENSE', 'Lucide-LICENSE.txt', $launcher)
 
 # The folder can also contain a private profile, files from the user, or junctions.
 # Only the names above are read from staging or replaced in the existing folder.
@@ -40,6 +40,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $BuildDir $exeName) -Destination (Join-Path $stage $exeName)
     Copy-Item -LiteralPath (Join-Path $assets $launcher), (Join-Path $assets 'README.txt') -Destination $stage
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $root 'packaging\Lucide-LICENSE.txt') -Destination $stage
     $config = New-Object Xml.XmlDocument
     $config.Load((Join-Path $BuildDir $configName))
     $section = $config.SelectSingleNode('/configuration/appSettings')
@@ -79,7 +80,7 @@ try {
 
     # Take writable handles before replacing anything. A running Windows executable
     # denies write access to its mapped image. Hold the old EXE handle until the end.
-    $order = @($configName, 'README.txt', 'LICENSE', $launcher, $zipName, ($zipName+'.sha256'), $exeName)
+    $order = @($files | Where-Object { $_ -ne $exeName }) + @($zipName, ($zipName+'.sha256'), $exeName)
     $writes = foreach ($name in $order) {
         $dir = if ($files -contains $name) { $folder } else { $release }
         $destination = Join-Path $dir $name

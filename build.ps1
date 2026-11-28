@@ -4,7 +4,7 @@ param(
     [switch]$PortableOnly,
     [switch]$InstallerOnly,
     [string]$Iscc,
-    [string]$PackageVersion = '1.3.1'
+    [string]$PackageVersion = '1.3.1.6'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +33,7 @@ try {
         "/win32manifest:$source\app.manifest", '/utf8output')
     if (Test-Path "$source\LunarisDock.ico") { $argsCsc += "/win32icon:$source\LunarisDock.ico" }
     $argsCsc += "/resource:$source\UI\Preferences.xaml,Lunaris.Preferences.xaml"
+    $argsCsc += "/resource:$source\UI\StatusMenuStyles.xaml,Lunaris.StatusMenuStyles.xaml"
     foreach ($code in 'en','ru','de','es','zh-CN') {
         $argsCsc += "/resource:$source\Languages\$code.txt,Lunaris.Languages.$code.txt"
     }
@@ -40,8 +41,12 @@ try {
                       'System.Runtime.Serialization','Microsoft.CSharp','System.Management','System.Security','System.Configuration') {
         $argsCsc += "/reference:$framework\$name.dll"
     }
-    foreach ($name in 'PresentationCore','PresentationFramework','WindowsBase','UIAutomationTypes','UIAutomationProvider') {
+    foreach ($name in 'PresentationCore','PresentationFramework','WindowsBase','UIAutomationTypes','UIAutomationProvider','UIAutomationClient') {
         $argsCsc += "/reference:$framework\WPF\$name.dll"
+    }
+    $argsCsc += "/reference:$framework\System.Runtime.dll"
+    foreach ($namespace in 'Windows.Devices','Windows.Foundation') {
+        $argsCsc += "/reference:$env:windir\System32\WinMetadata\$namespace.winmd"
     }
     $sources = @(Get-ChildItem -Path $source -Recurse -File -Filter '*.cs' | Sort-Object FullName | ForEach-Object FullName)
     & $compiler @argsCsc @sources

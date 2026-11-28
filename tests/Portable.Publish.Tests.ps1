@@ -7,12 +7,12 @@ $sourceRoot = Split-Path $PSScriptRoot
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 $leaf = 'Lunaris-Publish-' + [guid]::NewGuid().ToString('N')
 $sandbox = [IO.Path]::Combine($tempRoot, $leaf)
-$release = Join-Path $sandbox 'release\1.3.1'
+$release = Join-Path $sandbox 'release\1.3.1.6'
 $folder = Join-Path $release 'LunarisDock-Portable'
-$zipName = 'LunarisDock-1.3.1-x64-Portable.zip'
+$zipName = 'LunarisDock-1.3.1.6-x64-Portable.zip'
 $zip = Join-Path $release $zipName
 $cmd = 'Тестовый запуск.cmd'
-$names = @('LunarisDock.exe', 'LunarisDock.exe.config', 'README.txt', 'LICENSE', $cmd)
+$names = @('LunarisDock.exe', 'LunarisDock.exe.config', 'README.txt', 'LICENSE', 'Lucide-LICENSE.txt', $cmd)
 
 function Assert-Package {
     $rootNames = @(Get-ChildItem -LiteralPath $release -Force | ForEach-Object Name | Sort-Object)
@@ -55,6 +55,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'src') -Destination $sandbox -Recurse
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'build.ps1') -Destination $sandbox
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'LICENSE') -Destination $sandbox
+    Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging\Lucide-LICENSE.txt') -Destination (Join-Path $sandbox 'packaging')
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'scripts\Publish-Portable.ps1') -Destination $scripts
     foreach ($asset in @('README.txt', $cmd)) {
         Copy-Item -LiteralPath (Join-Path $sourceRoot ('packaging\portable\' + $asset)) -Destination $assets

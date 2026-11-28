@@ -11,6 +11,7 @@ $package = Join-Path $fixture 'packaging'
 New-Item -ItemType Directory -Path $src,$package -Force | Out-Null
 Copy-Item (Join-Path $root 'src\*') $src -Recurse -Force
 Copy-Item (Join-Path $root 'packaging\Lunaris.iss') $package -Force
+Copy-Item (Join-Path $root 'packaging\Lucide-LICENSE.txt') $package -Force
 Copy-Item (Join-Path $root 'packaging\languages') $package -Recurse -Force
 Copy-Item (Join-Path $root 'build.ps1') $fixture -Force
 Copy-Item (Join-Path $root 'LICENSE') $fixture -Force

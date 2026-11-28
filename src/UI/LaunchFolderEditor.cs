@@ -18,8 +18,8 @@ namespace Lunaris
         {
             editor.Resources["LibraryText"] = Appearance.Text;
             editor.Resources["LibraryMuted"] = Appearance.Muted;
-            editor.Resources["LibraryField"] = Appearance.Panel;
-            editor.Resources["LibraryStroke"] = Appearance.Border;
+            editor.Resources["LibraryField"] = Appearance.Glass == null ? Appearance.Panel : Appearance.Glass.Group;
+            editor.Resources["LibraryStroke"] = Appearance.Glass == null ? Appearance.Border : Appearance.Glass.Rim;
             editor.Resources["LibraryAccent"] = Appearance.Selection;
         }
 

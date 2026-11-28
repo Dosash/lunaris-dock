@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -114,8 +116,30 @@ namespace Lunaris
             return menu;
         }
 
+        internal static UIElement FolderIcon(double size, LibraryItem folder, IEnumerable<LibraryItem> contents,
+            Func<AppEntry,double,UIElement> childArt = null)
+        {
+            var icon = new Grid { Width = size, Height = size, IsHitTestVisible = false };
+            string top = folder == null ? "#FFE3A0" : folder.IsSystem ? "#95DDF9" : "#ADBCFC";
+            string bottom = folder == null ? "#DFAB43" : folder.IsSystem ? "#449EDB" : "#788AD7";
+            icon.Children.Add(new Border { Width = size * .56, Height = size * .30,
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(1,size*.10,0,0), CornerRadius = new CornerRadius(size*.09),
+                Background = Brush(bottom) });
+            var preview = new UniformGrid { Rows = 2, Columns = 2, Margin = new Thickness(size*.12,size*.07,size*.12,size*.07) };
+            if (contents != null)
+                foreach (var child in contents.Where(i => !i.IsFolder).Take(4))
+                    preview.Children.Add(childArt == null ? Icon(child.App, size*.25) : childArt(child.App, size*.25));
+            icon.Children.Add(new Border { Margin = new Thickness(0,size*.24,0,size*.07),
+                Background = new LinearGradientBrush(Brush(top).Color,Brush(bottom).Color,90),
+                BorderBrush = Brush("#50FFFFFF"), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(size*.10), Child = preview });
+            return icon;
+        }
+
         internal static UIElement Icon(AppEntry app, double size)
         {
+            if (app != null && app.DirectoryPath != null) return FolderIcon(size, null, null);
             if (app != null && app.Icon != null)
             {
                 var image = new Image { Source = app.Icon, Width = size * .86, Height = size * .86, Stretch = Stretch.Uniform,

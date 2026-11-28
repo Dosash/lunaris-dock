@@ -73,7 +73,8 @@ namespace Lunaris
 
             glass.CornerRadius = shadow.CornerRadius = new CornerRadius(25);
             glass.Margin = shadow.Margin = new Thickness(13,8,13,13);
-            shadow.IsHitTestVisible = false; glass.BorderThickness = new Thickness(1);
+            shadow.IsHitTestVisible = false; shadow.BorderThickness = new Thickness(1);
+            glass.BorderThickness = new Thickness(1);
             glass.Padding = new Thickness(19, 12, 19, 6);
             var layers = new Grid();
             layers.Children.Add(layout);
@@ -186,12 +187,12 @@ namespace Lunaris
             outside = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(45) };
             outside.Tick += delegate {
                 bool down = LaunchGlass.ButtonsDown();
-                if (down && !mouseDown && IsOpen && LaunchGlass.Outside(new WindowInteropHelper(this).Handle)) Dismiss();
+                if (down && !mouseDown && IsOpen && !ui.IconEditorOpen && LaunchGlass.Outside(new WindowInteropHelper(this).Handle)) Dismiss();
                 mouseDown = down;
             };
             Deactivated += delegate {
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(delegate {
-                    if (IsOpen && !opening && !IsActive && LaunchGlass.LostForeground()) Dismiss();
+                    if (IsOpen && !opening && !ui.IconEditorOpen && !IsActive && LaunchGlass.LostForeground()) Dismiss();
                 }));
             };
             Closed += delegate { outside.Stop(); navigation.Cancel(); ++animationId; };
@@ -225,7 +226,9 @@ namespace Lunaris
             title.Foreground = Appearance.Text; searchGlyph.Foreground = Appearance.Muted; placeholder.Foreground = Appearance.Muted;
             breadcrumb.Foreground = Appearance.Muted;
             search.Foreground = Appearance.Text; search.CaretBrush = Appearance.Text; search.SelectionBrush = Appearance.Selection;
-            searchFrame.Background = Translucent(Appearance.Panel,143); searchFrame.BorderBrush = Translucent(Appearance.Muted,60);
+            var material = Appearance.Glass;
+            searchFrame.Background = material == null ? Translucent(Appearance.Panel,143) : material.Group;
+            searchFrame.BorderBrush = material == null ? Translucent(Appearance.Muted,60) : material.Rim;
             moreCircle.BorderBrush = Appearance.Muted; ((TextBlock)moreCircle.Child).Foreground = Appearance.Text;
             empty.Foreground = Appearance.Muted;
             findFiles.Foreground = Appearance.Text;
@@ -237,10 +240,12 @@ namespace Lunaris
 
         private void PaintGlass()
         {
-            shadow.Background = Appearance.Surface;
-            shadow.Effect = Visuals.Shadow(15,5,Appearance.Dark ? .52 : .34);
             var material = Appearance.Glass;
-            if (material != null && LaunchGlass.Enabled())
+            if (material != null && !LaunchGlass.Enabled()) material = null;
+            shadow.Background = material == null ? Appearance.Surface : null;
+            shadow.BorderBrush = material == null ? null : Appearance.Border;
+            shadow.Effect = Visuals.Shadow(15,5,Appearance.Dark ? .52 : .34);
+            if (material != null)
             {
                 glass.BorderBrush = material.Rim;
                 if (backdrop == null) { glass.Background = material.Pane; return; }
@@ -248,8 +253,11 @@ namespace Lunaris
                 using (var dc = optics.Open())
                 {
                     var bounds = new Rect(0, 0, 1, 1);
+                    // Blend the refracted sample with the live desktop underneath.
+                    dc.PushOpacity(.55);
                     dc.DrawImage(LaunchGlass.Refract(backdrop), bounds);
-                    dc.PushOpacity(.9);
+                    dc.Pop();
+                    dc.PushOpacity(.66);
                     dc.DrawRectangle(material.Pane, null, bounds);
                     dc.Pop();
                 }
@@ -306,15 +314,15 @@ namespace Lunaris
             return IntPtr.Zero;
         }
 
-        internal void Open() { Open(ui.ActiveMonitor); }
+        internal void Open() { Open(ui.ActiveMonitor, LaunchLibrary.Root); }
 
-        internal void Open(ScreenInfo screen)
+        internal void Open(ScreenInfo screen, string destination)
         {
             opening = true; closing = false; ++animationId;
             try {
                 var hwnd = new WindowInteropHelper(this).EnsureHandle();
                 CloseEditor(false);
-                selected = 0; category = "All"; folderId = LaunchLibrary.Root; search.Clear();
+                selected = 0; category = "All"; folderId = destination; search.Clear();
                 BuildPills(); Reposition(screen);
                 Show(); screen.Place(this, PanelBounds(screen)); Activate(); ui.Platform.FocusWindow(hwnd);
                 Keyboard.Focus(search); mouseDown = LaunchGlass.ButtonsDown(); outside.Start();
@@ -329,7 +337,7 @@ namespace Lunaris
         {
             var b = ui.Settings.ReplaceTaskbar ? screen.Bounds : screen.WorkArea;
             double s = screen.Scale, gap = Math.Max(1, Math.Round(2*s));
-            double topLimit = b.Top + Math.Min(12*s,b.Height*.025);
+            double topLimit = Math.Max(b.Top, ui.StatusBarBottom(screen)) + Math.Min(12*s,b.Height*.025);
             double dockTop = Math.Min(b.Bottom, Math.Max(b.Top, ui.DockTopPixels));
             if (dockTop <= topLimit + 120*s) dockTop = b.Bottom - 10*s;
             double width = Math.Min(708*s, Math.Max(120*s, b.Width-4*s));
@@ -399,6 +407,7 @@ namespace Lunaris
                 menu.Items.Add(item);
             };
             AddLibraryActions(menu);
+            menu.Items.Add(ui.IconEditModeCommand());
             menu.Items.Add(new Separator());
             add("Explorer",Loc.Get("Explorer"),delegate {
                 OpenSystem(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"));

@@ -77,6 +77,7 @@ namespace Lunaris
             };
             BindSwitch("Magnify", () => ui.Settings.Magnify, v => ui.Settings.Magnify = v);
             BindSwitch("LiquidGlass", () => ui.Settings.LiquidGlass, v => ui.Settings.LiquidGlass = v);
+            BindSwitch("ShowStatusBar", () => ui.Settings.ShowStatusBar, v => ui.Settings.ShowStatusBar = v);
             BindSwitch("ShowUpdateBadge", () => ui.Settings.ShowUpdateBadge, v => ui.Settings.ShowUpdateBadge = v);
             BindSwitch("HideDockWhenCovered", () => ui.Settings.HideDockWhenCovered, v => ui.Settings.HideDockWhenCovered = v);
             BindSwitch("Startup", () => ui.Settings.Startup, v => ui.Settings.Startup = v);
@@ -296,6 +297,9 @@ namespace Lunaris
         private void SizeToScreen(ScreenInfo screen, Point? anchor)
         {
             var area = screen.WorkArea;
+            double lower = area.Bottom;
+            area.Y = Math.Max(area.Top, ui.StatusBarBottom(screen));
+            area.Height = Math.Max(1, lower-area.Y);
             double width = Math.Min(506, area.Width / screen.Scale);
             double preferred = (ui.Monitors.Length > 1 ? 736 : 693) + (ui.Settings.Theme == "custom" ? 74 : 0)
                 + 225 + (ui.AvailableUpdate == null ? 0 : 32);
