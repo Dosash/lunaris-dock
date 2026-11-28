@@ -123,7 +123,8 @@ internal static class PortableProfileTests
                         var s = Read(); return !s.InitializePins && s.Pins.Count >= 2 ? s : null;
                     }, "first-run portable settings and at least two registered applications");
                     var buttons = Wait(dock, delegate {
-                        var list = Buttons(dock); return list.Length >= Math.Min(2, saved.Pins.Count) ? list : null;
+                        var list = Buttons(dock);
+                        return list.Length >= 2 && list[0].Current.BoundingRectangle.Width > 0 ? list : null;
                     }, "visible portable pins");
                     string[] names={buttons[1].Current.Name,buttons[0].Current.Name};
                     File.WriteAllLines(proof, new[] { names[0], names[1],
@@ -147,13 +148,13 @@ internal static class PortableProfileTests
                 }
                 else {
                     string[] expected = File.ReadAllLines(proof);
-                    var buttons = Wait(dock, delegate {
+                    double originalWidth = Double.Parse(expected[2], CultureInfo.InvariantCulture);
+                    Wait(dock, delegate {
                         var list = Buttons(dock);
-                        return list.Length >= 2 && list[0].Current.Name == expected[0] && list[1].Current.Name == expected[1] ?
-                            list : null;
-                    }, "relocated Dock must render saved pin order");
-                    Require(buttons[0].Current.BoundingRectangle.Width > Double.Parse(expected[2], CultureInfo.InvariantCulture),
-                        "relocated Dock renders the saved size and reordered pins");
+                        return list.Length >= 2 && list[0].Current.Name == expected[0] && list[1].Current.Name == expected[1] &&
+                            list[0].Current.BoundingRectangle.Width > originalWidth ? list : null;
+                    }, "relocated Dock must render the saved size and reordered pins");
+                    Console.WriteLine("PASS relocated Dock renders the saved size and reordered pins");
                     var saved = Read();
                     Require(saved.Size == 70 && !saved.Magnify && !saved.HideDockWhenCovered && saved.HideWindowsStart &&
                         saved.Pins.SequenceEqual(expected.Skip(3)),
