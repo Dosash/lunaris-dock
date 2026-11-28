@@ -87,6 +87,7 @@ OpenStart=Abrir Inicio
 SettingsMenu=Ajustes…
 Quit=Salir del Dock
 LaunchApp=Abrir aplicación
+TaskManager=Administrador de tareas
 Unpin=Desanclar del Dock
 Pin=Anclar al Dock
 IconEdit=Cambiar icono…

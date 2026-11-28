@@ -30,6 +30,11 @@ internal static partial class PreviewTests
         profile.Pins.Clear(); profile.Pins.Add(path);
         profile.Pins.Add("dock-separator:hover-fixture");
         profile.Pins.Add("dock-folder:"+folder);
+        SetHoverMarkers(profile, "lunaris:start", LaunchLibrary.AppKey(path), folder);
+        SettingsStore.Save(profile);
+    }
+    static void SetHoverMarkers(UserSettings profile, params string[] keys)
+    {
         using(var bitmap=new Bitmap(96,96,PixelFormat.Format32bppArgb))
         using(var memory=new MemoryStream())
         {
@@ -40,12 +45,11 @@ internal static partial class PreviewTests
             }
             bitmap.Save(memory,ImageFormat.Png);
             string png=Convert.ToBase64String(memory.ToArray());
-            foreach(string key in new[]{"lunaris:start",LaunchLibrary.AppKey(path),folder}) {
+            foreach(string key in keys) {
                 profile.IconDesigns.RemoveAll(d=>String.Equals(d.Key,key,StringComparison.OrdinalIgnoreCase));
                 profile.IconDesigns.Add(new IconDesign { Key=key, Shape="none", Size=100, Foreground="image", ImagePng=png });
             }
         }
-        SettingsStore.Save(profile);
     }
     static Rectangle[] MarkerBounds(Rectangle box)
     {

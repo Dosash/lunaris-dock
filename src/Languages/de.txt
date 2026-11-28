@@ -87,6 +87,7 @@ OpenStart=Startmenü öffnen
 SettingsMenu=Einstellungen…
 Quit=Dock beenden
 LaunchApp=Anwendung starten
+TaskManager=Task-Manager
 Unpin=Vom Dock lösen
 Pin=Am Dock anheften
 IconEdit=Symbol ändern…

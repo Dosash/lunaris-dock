@@ -8,12 +8,14 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Windows;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace Lunaris
 {
     internal static class Program
     {
+        internal const int AnimationFrameRate = 60;
         [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(int processId);
 
         private static bool Has(string[] args, string option)
@@ -109,8 +111,14 @@ namespace Lunaris
             return 3;
         }
 
+        internal static void ConfigureAnimationTiming()
+        {
+            Timeline.DesiredFrameRateProperty.OverrideMetadata(typeof(Timeline), new PropertyMetadata(AnimationFrameRate));
+        }
+
         private static int Run(string name, bool preview, UserSettings settings)
         {
+            ConfigureAnimationTiming();
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
             using (var toggle = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".toggle"))

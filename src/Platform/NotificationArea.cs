@@ -17,6 +17,7 @@ namespace Lunaris
             internal string Key, Name;
             internal BitmapSource Icon;
             internal long Registration;
+            internal uint ProcessId;
         }
 
         private sealed class RegisteredIcon
@@ -66,6 +67,16 @@ namespace Lunaris
             host.SetOpen(false);
         }
 
+        internal static void RefreshOpenStrip()
+        {
+            if (host != null) host.RefreshSteamIcon();
+        }
+
+        internal static bool HasRegistration(uint pid)
+        {
+            lock (gate) return icons.Values.Any(i => i.Process == pid && i.Source != null && i.Message >= 0x400);
+        }
+
         internal static void Reset()
         {
             lock (gate) icons.Clear();
@@ -84,7 +95,7 @@ namespace Lunaris
                         continue;
                     }
                     if (icon.Hidden || icon.Source == null || icon.Message < 0x400) continue;
-                    result.Add(new Item { Key = icon.Key, Registration = icon.Registration,
+                    result.Add(new Item { Key = icon.Key, Registration = icon.Registration, ProcessId = icon.Process,
                         Name = String.IsNullOrWhiteSpace(icon.Name) ? Loc.Get("StatusApps") : icon.Name,
                         Icon = icon.AtSize(pixelSize) });
                 }

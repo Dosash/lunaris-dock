@@ -87,6 +87,7 @@ OpenStart=打开启动菜单
 SettingsMenu=设置…
 Quit=退出程序坞
 LaunchApp=启动应用
+TaskManager=任务管理器
 Unpin=从程序坞取消固定
 Pin=固定到程序坞
 IconEdit=更改图标…

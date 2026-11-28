@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace Lunaris
 {
@@ -13,7 +14,7 @@ namespace Lunaris
         private const string LibraryDragFormat = "Lunaris.LibraryItem.1";
         private LaunchLibrary library;
         private string folderId = LaunchLibrary.Root;
-        private readonly UIElement navigationLogo;
+        private readonly Image navigationLogo;
         private readonly Button backButton;
         private readonly TextBlock breadcrumb;
         private bool dragging;
@@ -87,11 +88,18 @@ namespace Lunaris
             if (folderId != LaunchLibrary.Root) Navigate(ParentFolder(), folderId);
         }
 
-        private void OpenItem(LibraryItem item)
+        private void OpenItem(LibraryItem item, FrameworkElement artwork)
         {
             if (ui.EditingIcons) ui.EditIcon(IconForItem(item),ui.ActiveMonitor);
             else if (item.IsFolder) Navigate(item.Id, null);
-            else ui.Launch(item.App);
+            else {
+                if (Appearance.Motion && item.App.DirectoryPath == null) {
+                    var offset = new TranslateTransform();
+                    artwork.RenderTransform = offset;
+                    Visuals.Bounce(offset, iconSize);
+                }
+                ui.Launch(item.App, panelScreen);
+            }
         }
 
         private IconTarget IconForItem(LibraryItem item)

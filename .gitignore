@@ -23,6 +23,7 @@
 !/src/**/*.cs
 !/src/UI/Preferences.xaml
 !/src/UI/StatusMenuStyles.xaml
+!/src/UI/ContextMenuStyles.xaml
 !/src/App.config
 !/src/app.manifest
 !/src/LunarisDock.ico

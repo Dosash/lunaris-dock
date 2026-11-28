@@ -22,6 +22,9 @@ namespace Lunaris
         private readonly Border plate;
         private readonly TranslateTransform slide = new TranslateTransform();
         private readonly List<PinSlot> slots = new List<PinSlot>();
+        // Rebuilding a button when its first window appears must keep its running animation.
+        private readonly Dictionary<string, TranslateTransform> launchOffsets =
+            new Dictionary<string, TranslateTransform>(StringComparer.OrdinalIgnoreCase);
         private readonly DockItemMotion items;
         private int previousPinCount;
         private bool themeChanged;
@@ -44,6 +47,17 @@ namespace Lunaris
         internal bool Busy { get { return drag != null || (shownMenu != null && shownMenu.IsOpen); } }
         internal bool WantsPointer { get { return Busy || (revealed && IsMouseOver); } }
         internal bool IsRevealed { get { return revealed; } }
+
+        internal Rect LaunchButtonBounds(string folderId)
+        {
+            if (!IsVisible) return Rect.Empty;
+            UpdateLayout();
+            var buttons = strip.Children.OfType<Button>();
+            var button = buttons.FirstOrDefault(b => (string)b.Tag == "app:" + DockItem.FolderPrefix + folderId)
+                ?? buttons.FirstOrDefault(b => (string)b.Tag == "start");
+            if (button == null || button.ActualWidth <= 0 || button.ActualHeight <= 0) return Rect.Empty;
+            return new Rect(button.PointToScreen(new Point()), button.PointToScreen(new Point(button.ActualWidth, button.ActualHeight)));
+        }
 
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, uint command);
@@ -239,6 +253,8 @@ namespace Lunaris
                 .Where(a => a != null && used.Add(a.Id)).OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(a => new DockItem { Key = a.Id, App = a });
             var entries = pinned.Concat(running).ToList();
+            foreach (string stale in launchOffsets.Keys.Where(id => !used.Contains(id)).ToArray())
+                launchOffsets.Remove(stale);
             double space = bounds.Width / screen.Scale - 65 - cell;
             bool overflow = entries.Count > 0 && entries.Sum(entry => ItemWidth(entry)) > space;
             if (overflow) space -= cell;
@@ -276,6 +292,9 @@ namespace Lunaris
                 };
                 strip.Children.Add(more);
             }
+            // The strip is dirty immediately after rebuilding its buttons, but
+            // WPF can still cache the plate's previous unconstrained measure.
+            surface.InvalidateMeasure();
             surface.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
             double width = Math.Min(bounds.Width, Math.Ceiling((surface.DesiredSize.Width + 2) * screen.Scale));
             // RenderTransforms do not participate in WPF measure. Reserve their
@@ -324,6 +343,12 @@ namespace Lunaris
             button.Width = cell; button.Height = cell;
             var canvas = new Grid();
             var image = MagnifyingArt(button, ui.IconArt(target, art));
+            if (app != null && !folder) {
+                TranslateTransform offset;
+                if (!launchOffsets.TryGetValue(app.Id, out offset))
+                    launchOffsets[app.Id] = offset = new TranslateTransform();
+                ((TransformGroup)image.RenderTransform).Children.Add(offset);
+            }
             if (first && ui.Settings.ShowUpdateBadge && ui.AvailableUpdate != null)
             {
                 var artwork = image.Child;
@@ -359,8 +384,8 @@ namespace Lunaris
                     if (ui.EditingIcons) { ui.EditIcon(target,screen); return; }
                     if (item.Folder != null) { ui.ShowLaunchpad(screen, item.Folder.Id); return; }
                     var windows = ui.WindowsFor(app.Id);
-                    if (windows.Count == 0) ui.Launch(app);
-                    else if (windows.Count == 1) ui.Activate(windows[0]);
+                    if (windows.Count == 0) ui.Launch(app, screen);
+                    else if (windows.Count == 1) ui.Activate(windows[0], screen);
                     else {
                         var menu = Visuals.Menu();
                         FillWindows(menu, windows);
@@ -393,6 +418,15 @@ namespace Lunaris
             return new Border { Child = artwork, Background = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 2), RenderTransform = transforms, RenderTransformOrigin = new Point(.5, 1) };
+        }
+
+        internal bool Bounce(string appId)
+        {
+            TranslateTransform offset;
+            if (!revealed || !Appearance.Motion || String.IsNullOrEmpty(appId) || !launchOffsets.TryGetValue(appId, out offset))
+                return false;
+            Visuals.Bounce(offset, art);
+            return true;
         }
 
         private void AnimateIcon(ScaleTransform scale, TranslateTransform raise, double factor, double y)
@@ -630,12 +664,16 @@ namespace Lunaris
             menu.IsOpen = true;
         }
 
-        private MenuItem SettingsMenuItem()
+        private void AddDockCommands(ItemsControl menu)
         {
+            string manager = Loc.Get("TaskManager");
+            var taskManager = Visuals.MenuItem(manager, delegate { ui.OpenTaskManager(screen); });
+            Visuals.Identify(taskManager, "Dock.TaskManager", manager);
+            menu.Items.Add(taskManager);
             string caption = Loc.Get("SettingsMenu");
             var item = Visuals.MenuItem(caption, delegate { ui.OpenPreferences(screen); });
             Visuals.Identify(item, "Dock.Settings", caption);
-            return item;
+            menu.Items.Add(item);
         }
 
         private void FillMainMenu(ContextMenu menu)
@@ -645,7 +683,7 @@ namespace Lunaris
             string anchor = DropAnchor(Mouse.GetPosition(strip).X, null, out after);
             AddSeparatorCommand(menu, anchor, after);
             menu.Items.Add(ui.IconEditModeCommand());
-            menu.Items.Add(SettingsMenuItem());
+            AddDockCommands(menu);
             menu.Items.Add(new Separator());
             menu.Items.Add(Visuals.MenuItem(Loc.Get("Quit"), ui.Exit));
         }
@@ -665,7 +703,7 @@ namespace Lunaris
                 FillWindows(menu, windows);
                 if (windows.Count > 0) menu.Items.Add(new Separator());
                 menu.Items.Add(Visuals.MenuItem(Loc.Get(item.App.DirectoryPath == null ? "LaunchApp" : "OpenFolder"),
-                    delegate { ui.Launch(item.App); }));
+                    delegate { ui.Launch(item.App, screen); }));
             }
             else if (item.Folder != null)
                 menu.Items.Add(Visuals.MenuItem(Loc.Get("OpenFolder"), delegate { ui.ShowLaunchpad(screen, item.Folder.Id); }));
@@ -681,7 +719,7 @@ namespace Lunaris
             }
             menu.Items.Add(new Separator());
             AddSeparatorCommand(menu, pin, true);
-            menu.Items.Add(SettingsMenuItem());
+            AddDockCommands(menu);
             menu.Items.Add(Visuals.MenuItem(Loc.Get("Quit"), ui.Exit));
         }
 
@@ -689,7 +727,7 @@ namespace Lunaris
         {
             foreach (var entry in windows)
             {
-                var item = Visuals.MenuItem(entry.Title, delegate { ui.Activate(entry); });
+                var item = Visuals.MenuItem(entry.Title, delegate { ui.Activate(entry, screen); });
                 item.ToolTip = Visuals.Tip(entry.Title);
                 item.Header = new TextBlock { Text = entry.Title, FontFamily = UiFonts.Text, MaxWidth = 420,
                     TextTrimming = TextTrimming.CharacterEllipsis };

@@ -4,7 +4,7 @@ param(
     [switch]$PortableOnly,
     [switch]$InstallerOnly,
     [string]$Iscc,
-    [string]$PackageVersion = '1.3.1.8'
+    [string]$PackageVersion = '1.3.1.9'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +35,7 @@ try {
     $argsCsc += "/resource:$source\LunarisDock.ico,Lunaris.LunarisDock.ico"
     $argsCsc += "/resource:$source\UI\Preferences.xaml,Lunaris.Preferences.xaml"
     $argsCsc += "/resource:$source\UI\StatusMenuStyles.xaml,Lunaris.StatusMenuStyles.xaml"
+    $argsCsc += "/resource:$source\UI\ContextMenuStyles.xaml,Lunaris.ContextMenuStyles.xaml"
     foreach ($code in 'en','ru','de','es','zh-CN') {
         $argsCsc += "/resource:$source\Languages\$code.txt,Lunaris.Languages.$code.txt"
     }

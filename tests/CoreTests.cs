@@ -533,11 +533,25 @@ internal class CoreTests
         Require(!key(0x5b,true,false) && key(0x5b,false,false), "single Win recovers after a lock-screen key-up was missed");
     }
 
+    static void TrayMenuPosition()
+    {
+        var method = typeof(UserSettings).Assembly.GetType("Lunaris.SteamTrayMenu")
+            .GetMethod("Position", BindingFlags.NonPublic | BindingFlags.Static);
+        var button = new Int32Rect(1961,1440,36,37);
+        var area = new Rect(339,1478,1920,1162);
+        var point = (Point)method.Invoke(null, new object[] {button, area, 237, 569, 1979d});
+        Require(point == new Point(1979,1478), "Steam menu opens directly below the tray on an offset 125% monitor");
+        button = new Int32Rect(-72,-1080,36,38);
+        area = new Rect(-1920,-1042,1920,1042);
+        point = (Point)method.Invoke(null, new object[] {button, area, 237, 569, -54d});
+        Require(point == new Point(-291,-1042), "Steam menu fits to the left near the right edge of a negative-coordinate monitor");
+    }
+
     [STAThread]
     public static int Main()
     {
         string profile = Path.Combine(Path.GetTempPath(), "Lunaris-Core-" + Guid.NewGuid().ToString("N"));
-        try { Settings(profile); Library(); StartFolderImport(); Gestures(); Themes(); CustomThemes(); GlassRefraction(); MonitorRow(); Fonts(); Catalog(); return 0; }
+        try { Settings(profile); Library(); StartFolderImport(); Gestures(); Themes(); CustomThemes(); GlassRefraction(); MonitorRow(); TrayMenuPosition(); Fonts(); Catalog(); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
         finally
         {

@@ -102,16 +102,28 @@ namespace Lunaris
             return tip;
         }
 
+        private static readonly Lazy<ResourceDictionary> MenuStyles = new Lazy<ResourceDictionary>(() => {
+            using (var stream = typeof(Visuals).Assembly.GetManifestResourceStream("Lunaris.ContextMenuStyles.xaml"))
+                return (ResourceDictionary)System.Windows.Markup.XamlReader.Load(stream);
+        });
+
         internal static ContextMenu Menu()
         {
             var menu = new ContextMenu { FontFamily = UiFonts.Text, Padding = new Thickness(3), FontSize = 13 };
+            menu.Resources.MergedDictionaries.Add(MenuStyles.Value);
+            menu.Template = (ControlTemplate)MenuStyles.Value["ContextMenuFrame"];
             menu.Opened += delegate {
-                menu.Background = Appearance.Panel; menu.Foreground = Appearance.Text; menu.BorderBrush = Appearance.Border;
-                menu.Resources[SystemColors.MenuBrushKey] = Appearance.Panel;
-                menu.Resources[SystemColors.MenuTextBrushKey] = Appearance.Text;
-                menu.Resources[SystemColors.HighlightBrushKey] = Appearance.Selection;
-                menu.Resources[SystemColors.HighlightTextBrushKey] = Appearance.Text;
-                menu.Resources[SystemColors.ControlTextBrushKey] = Appearance.Text;
+                bool hc = SystemParameters.HighContrast;
+                menu.Background = hc ? SystemColors.MenuBrush : Appearance.Panel;
+                menu.Foreground = hc ? SystemColors.MenuTextBrush : Appearance.Text;
+                menu.BorderBrush = hc ? SystemColors.WindowTextBrush : Appearance.Border;
+                menu.Resources["MenuEdge"] = menu.BorderBrush;
+                menu.Resources[SystemColors.MenuBrushKey] = menu.Background;
+                menu.Resources[SystemColors.MenuTextBrushKey] = menu.Foreground;
+                menu.Resources[SystemColors.HighlightBrushKey] = hc ? SystemColors.HighlightBrush : Appearance.Selection;
+                menu.Resources[SystemColors.HighlightTextBrushKey] = hc ? SystemColors.HighlightTextBrush : menu.Foreground;
+                menu.Resources[SystemColors.GrayTextBrushKey] = hc ? SystemColors.GrayTextBrush : Appearance.Muted;
+                menu.Resources[SystemColors.ControlTextBrushKey] = menu.Foreground;
             };
             return menu;
         }
@@ -169,20 +181,9 @@ namespace Lunaris
                 Child = text, IsHitTestVisible = false };
         }
 
-        private static readonly Lazy<BitmapSource> LaunchArtwork = new Lazy<BitmapSource>(() =>
-        {
-            using (var stream = typeof(Visuals).Assembly.GetManifestResourceStream("Lunaris.LunarisDock.ico"))
-            {
-                var decoder = new IconBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-                var source = decoder.Frames.OrderByDescending(frame => frame.PixelWidth).First();
-                source.Freeze();
-                return source;
-            }
-        });
-
         internal static Image LaunchIcon(double size)
         {
-            var image = new Image { Source = LaunchArtwork.Value, Width = size, Height = size, IsHitTestVisible = false };
+            var image = new Image { Source = LaunchArtwork.ForTheme(), Width = size, Height = size, IsHitTestVisible = false };
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
             return image;
         }
@@ -193,6 +194,19 @@ namespace Lunaris
                 Padding = new Thickness(9, 5, 15, 5) };
             item.Click += delegate { action(); };
             return item;
+        }
+
+        internal const int BounceMilliseconds = 300;
+
+        internal static void Bounce(TranslateTransform offset, double size)
+        {
+            double height = Math.Max(4, Math.Min(9, size * .14));
+            var motion = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.Stop };
+            var smooth = new SineEase { EasingMode = EasingMode.EaseInOut };
+            motion.KeyFrames.Add(new LinearDoubleKeyFrame(offset.Y, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            motion.KeyFrames.Add(new EasingDoubleKeyFrame(-height, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(130)), smooth));
+            motion.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(BounceMilliseconds)), smooth));
+            offset.BeginAnimation(TranslateTransform.YProperty, motion);
         }
 
         internal static void Animate(Animatable target, DependencyProperty property, double to, int ms)

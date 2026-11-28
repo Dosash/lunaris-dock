@@ -87,6 +87,7 @@ OpenStart=Открыть Пуск
 SettingsMenu=Настройки…
 Quit=Выйти из Dock
 LaunchApp=Запустить приложение
+TaskManager=Диспетчер задач
 Unpin=Открепить от Dock
 Pin=Закрепить в Dock
 IconEdit=Изменить значок…

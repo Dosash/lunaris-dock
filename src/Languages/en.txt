@@ -87,6 +87,7 @@ OpenStart=Open Start
 SettingsMenu=Settings…
 Quit=Quit Dock
 LaunchApp=Launch application
+TaskManager=Task Manager
 Unpin=Unpin from Dock
 Pin=Pin to Dock
 IconEdit=Change icon…

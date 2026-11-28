@@ -138,12 +138,17 @@ internal static partial class PreviewTests
         if (Owner(WindowFromPoint(p)) != dock.Id) throw new Exception("Target is covered: " + p);
         SetCursorPos(p.X, p.Y);
     }
-    static void Click(AE e, bool right)
+    static void Click(AE e, bool right, Action duringTransition = null)
     {
         Move(Center(e, .5)); Thread.Sleep(90);
         mouse_event(right ? 8U : 2U, 0, 0, 0, UIntPtr.Zero);
         mouse_event(right ? 16U : 4U, 0, 0, 0, UIntPtr.Zero);
-        Thread.Sleep(230);
+        if (duringTransition == null) Thread.Sleep(230);
+        else {
+            Thread.Sleep(110);
+            duringTransition();
+            Thread.Sleep(120);
+        }
     }
     static void Drag(AE source, AE target, bool cancel, IList<string> saved)
     {
@@ -187,16 +192,20 @@ internal static partial class PreviewTests
     {
         monitor = monitor ?? Screen.PrimaryScreen;
         var bar = Reveal(monitor);
-        Click(Find(bar, AE.AutomationIdProperty, "OpenLaunchpad"), false);
+        var start=Find(bar,AE.AutomationIdProperty,"OpenLaunchpad");
+        Click(start, false, delegate {
+            if(WindowFromPoint(Center(start,.5))!=new IntPtr(bar.Current.NativeWindowHandle))
+                throw new Exception("Start animation intercepts a second click on its Dock button.");
+        });
         var pad = WaitFor(() => Window("Launchpad"), "mouse opens Launchpad");
         Until(() => Tiles(pad).Length > 0, "populated first page");
         var rect=pad.Current.BoundingRectangle;
         var work=monitor.WorkingArea;
         if(rect.Width>=work.Width && rect.Height>=work.Height) throw new Exception("Launchpad unexpectedly covers the whole work area.");
-        var start=Find(bar,AE.AutomationIdProperty,"OpenLaunchpad");
-        if(rect.Bottom>start.Current.BoundingRectangle.Top+2 ||
-            WindowFromPoint(Center(start,.5))!=new IntPtr(bar.Current.NativeWindowHandle))
+        if(WindowFromPoint(Center(start,.5))!=new IntPtr(bar.Current.NativeWindowHandle))
             throw new Exception("Launchpad covers the Dock icon row.");
+        Until(() => pad.Current.BoundingRectangle.Bottom <= start.Current.BoundingRectangle.Top + 2,
+            "Start settles above the Dock after opening from its button");
         if(Find(pad,AE.AutomationIdProperty,"Launchpad.Title")==null) throw new Exception("Missing Launchpad title.");
         return pad;
     }
@@ -404,12 +413,21 @@ internal static partial class PreviewTests
             graphics.CopyFromScreen(box.Location,Point.Empty,image.Size);
         return image;
     }
+    static void CheckMenuGutter(AE command)
+    {
+        using (var row = CaptureIcon(command)) {
+            int y = row.Height / 2;
+            var gutter = row.GetPixel(4, y);
+            var face = row.GetPixel(row.Width - 5, y);
+            if (gutter.ToArgb() != face.ToArgb())
+                throw new Exception("Menu gutter differs from the row background at " + command.Current.Name + ": " + gutter + " vs " + face);
+        }
+    }
     static double GlyphSpan(Bitmap image)
     {
-        // Measure the distance between colour centroids in the actual Start artwork.
+        // Measure the distance between colour centroids in the fixture artwork.
         // Background, tooltip shadow, focus and native cursor pixels do not contribute.
-        var palette = new[]{Color.FromArgb(112,204,254),Color.FromArgb(140,151,255),
-                            Color.FromArgb(101,212,198),Color.FromArgb(192,145,240)};
+        var palette = MarkerColors;
         var count=new int[4]; var xsum=new double[4]; var ysum=new double[4];
         for(int y=0;y<image.Height;y++) for(int x=0;x<image.Width;x++)
         {
@@ -785,7 +803,7 @@ internal static partial class PreviewTests
         var apps = Buttons(bar,"Dock.App");
         if (pins.Count < 2) throw new Exception("Need two pins for the separator test.");
         Click(apps[1],true);
-        WaitFor(()=>Menu("Добавить разделитель"), "app menu offers a separator");
+        CheckMenuGutter(WaitFor(()=>Menu("Добавить разделитель"), "app menu offers a separator"));
         Click(apps[1],true);
         Until(()=>Menu("Добавить разделитель")==null, "right-clicking the icon again dismisses its menu");
         Click(apps[1],true);
@@ -913,6 +931,8 @@ internal static partial class PreviewTests
             "renamed Dock folder survives restart");
         Click(pinnedFolder,false);
         pad = WaitFor(()=>Window("Launchpad"), "Dock folder opens Start");
+        Until(()=>pad.Current.BoundingRectangle.Bottom <= pinnedFolder.Current.BoundingRectangle.Top + 2,
+            "folder launch animation settled before clicking menu controls");
         Until(()=>Buttons(pad,"Launchpad.App").Select(t=>t.Current.Name).SequenceEqual(reverse),
               "renamed folder, moved apps and manual order survive process restart");
         if(folderImage!=null)
@@ -1057,9 +1077,9 @@ internal static partial class PreviewTests
         Click(Find(pad,AE.AutomationIdProperty,"Launchpad.More"),false);
         Until(()=>Menu("Параметры Windows")!=null && Menu("Проводник")!=null && Menu("Настройки Dock…")!=null,
             "Launchpad action menu exposes system and Dock commands");
-        WaitFor(()=>Roots().Select(r=>Find(r,AE.AutomationIdProperty,"Launchpad.Action.Power"))
+        CheckMenuGutter(WaitFor(()=>Roots().Select(r=>Find(r,AE.AutomationIdProperty,"Launchpad.Action.Power"))
             .FirstOrDefault(item=>item!=null && !item.Current.IsOffscreen),
-            "power command is present in Launchpad actions");
+            "power command is present in Launchpad actions"));
         WaitFor(()=>Roots().Select(r=>Find(r,AE.AutomationIdProperty,"Launchpad.Action.Files"))
             .FirstOrDefault(item=>item!=null && !item.Current.IsOffscreen),
             "file search is present in Launchpad actions");
@@ -1171,7 +1191,10 @@ internal static partial class PreviewTests
             if(args.Length==2 && args[0]=="--fixtures") { Fixtures(args[1]); return 0; }
             Environment.SetEnvironmentVariable("LUNARIS_PROFILE", profile);
             // The legacy menu and library assertions exercise the Russian translation on every Windows locale.
-            SettingsStore.Save(new UserSettings { Language = "ru", Monitor = args.Contains("--store-only") ? "all" : "primary" });
+            var profileSettings = new UserSettings { Language = "ru", Monitor = args.Contains("--store-only") ? "all" : "primary" };
+            if (args.Contains("--settings-only") || !args.Any(arg => arg.EndsWith("-only", StringComparison.Ordinal)))
+                SetHoverMarkers(profileSettings, "lunaris:start");
+            SettingsStore.Save(profileSettings);
             exe=args[0];
             string imageArg=args.FirstOrDefault(arg=>arg.StartsWith("--folder-image=",StringComparison.Ordinal));
             if(imageArg!=null) folderImage=Path.GetFullPath(imageArg.Substring("--folder-image=".Length));

@@ -127,6 +127,24 @@ namespace Lunaris
             }, IntPtr.Zero);
         }
 
+        internal void RefreshSteamIcon()
+        {
+            dispatcher.BeginInvoke(new Action(delegate {
+                if (window == IntPtr.Zero || FindWindow(ClassName, null) != window) return;
+                // Steam's VGUI windows renew the tray registration. Its separate
+                // Chromium UI process owns the menu but does not republish the icon.
+                uint created = RegisterWindowMessage("TaskbarCreated");
+                if (created == 0) return;
+                IntPtr hwnd = IntPtr.Zero;
+                while ((hwnd = FindWindowEx(IntPtr.Zero, hwnd, "vguiPopupWindow", null)) != IntPtr.Zero) {
+                    uint pid;
+                    if (GetWindowThreadProcessId(hwnd, out pid) != 0 && !NotificationArea.HasRegistration(pid) &&
+                        SteamTrayMenu.ProcessName(pid) == "steam")
+                        PostMessage(hwnd, created, IntPtr.Zero, IntPtr.Zero);
+                }
+            }));
+        }
+
         private void Close()
         {
             if (timer != null) { timer.Stop(); timer = null; }
@@ -223,6 +241,7 @@ namespace Lunaris
             string name, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr args);
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr DefWindowProc(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr FindWindow(string cls, string name);
+        [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
         [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindow callback, IntPtr data);

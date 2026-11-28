@@ -146,7 +146,7 @@ namespace Lunaris
                 int index = start+i;
                 tile.Content=frame;
                 tile.MouseMove += delegate { if (!navigation.Active && selected!=index) { selected=index; MarkSelection(); } };
-                tile.Click += delegate { if (!dragging) OpenItem(item); };
+                tile.Click += delegate { if (!dragging) OpenItem(item, art); };
                 AutomationProperties.SetItemStatus(tile,status);
                 if (search.Text.Trim().Length != 0 && item.ParentId != LaunchLibrary.Root)
                     tile.ToolTip = Visuals.Tip(item.Name + "\n" + FolderPath(item.ParentId));
@@ -237,7 +237,8 @@ namespace Lunaris
                 case Key.Escape: Dismiss(); break;
                 case Key.Enter:
                     if(Keyboard.FocusedElement is Button)return;
-                    if(results.Count>0)OpenItem(results[selected]); break;
+                    if(results.Count>0) ((Button)grid.Children[selected % Capacity]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    break;
                 case Key.Left: offset=-1; break;
                 case Key.Right: offset=1; break;
                 case Key.Up: offset=-columns; break;

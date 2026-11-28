@@ -28,7 +28,10 @@ namespace Lunaris
 
         internal static string Label(IntPtr layout)
         {
-            try { return CultureInfo.GetCultureInfo((int)(layout.ToInt64() & 0xffff)).TwoLetterISOLanguageName.ToUpperInvariant(); }
+            // A foreground thread can exit between Observe and GetKeyboardLayout.
+            int language = (int)(layout.ToInt64() & 0xffff);
+            if (language == 0) return "⌨";
+            try { return CultureInfo.GetCultureInfo(language).TwoLetterISOLanguageName.ToUpperInvariant(); }
             catch (CultureNotFoundException) { return "⌨"; }
         }
 

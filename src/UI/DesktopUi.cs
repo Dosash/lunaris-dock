@@ -92,6 +92,11 @@ namespace Lunaris
             releaseTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher) { Interval = TimeSpan.FromHours(6) };
             releaseTimer.Tick += RefreshUpdate;
             RefreshUpdate(this, EventArgs.Empty);
+            dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(delegate {
+                if (disposed || launchpad != null || !Appearance.Motion) return;
+                launchpad = new LaunchSurface(this);
+                launchpad.PrepareWindow();
+            }));
         }
 
         // Invoked on the WPF dispatcher. Schedule the next check after this one
@@ -397,8 +402,12 @@ namespace Lunaris
             if (preferences != null) preferences.Close();
             if (launchpad == null) launchpad = new LaunchSurface(this);
             Surface entry;
-            if (surfaces.TryGetValue(screen.Id, out entry)) entry.Dock.SetRevealed(true, false);
-            launchpad.Open(screen, folderId);
+            var origin = Rect.Empty;
+            if (surfaces.TryGetValue(screen.Id, out entry)) {
+                entry.Dock.SetRevealed(true, false);
+                origin = entry.Dock.LaunchButtonBounds(folderId);
+            }
+            launchpad.Open(screen, folderId, origin, entry == null ? IntPtr.Zero : new WindowInteropHelper(entry.Dock).Handle);
         }
 
         internal void LaunchpadClosed() { UpdateVisibility(true); }
@@ -575,16 +584,35 @@ namespace Lunaris
             Platform.FocusWindow(new WindowInteropHelper(preferences).Handle);
         }
 
-        internal void Launch(AppEntry app)
+        internal void OpenTaskManager(ScreenInfo screen)
+        {
+            string path = Path.Combine(Environment.SystemDirectory, "Taskmgr.exe");
+            Launch(new AppEntry { Id = path, DirectPath = path, Name = Loc.Get("TaskManager") }, screen);
+        }
+
+        private void Bounce(string appId, ScreenInfo screen)
+        {
+            Surface entry;
+            if (screen != null && surfaces.TryGetValue(screen.Id, out entry) && entry.Dock.Bounce(appId))
+                entry.RevealUntil = Math.Max(entry.RevealUntil, clock.ElapsedMilliseconds + Visuals.BounceMilliseconds);
+        }
+
+        internal void Launch(AppEntry app, ScreenInfo screen)
         {
             if (launchpad != null && launchpad.IsVisible) launchpad.Dismiss();
-            try { Platform.Launch(app); }
+            try {
+                Platform.Launch(app);
+                if (app != null && app.DirectoryPath == null) Bounce(app.Id, screen);
+            }
             catch (Exception ex) { Alert(Loc.Format("LaunchError", app.Name), ex); }
         }
 
-        internal void Activate(WindowEntry window)
+        internal void Activate(WindowEntry window, ScreenInfo screen)
         {
-            try { Platform.Activate(window); }
+            try {
+                Platform.Activate(window);
+                if (window != null) Bounce(window.AppId, screen);
+            }
             catch (Exception ex) { Alert(Loc.Get("SwitchWindowError"), ex); }
         }
 

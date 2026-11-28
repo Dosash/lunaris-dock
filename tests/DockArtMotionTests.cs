@@ -89,6 +89,65 @@ internal static class DockArtMotionTests
             Check(!play(before) && strip.Children.Count==2,"reduced motion, resize and hidden docks use the final layout immediately");
         }
     }
+
+    static void DockWidth()
+    {
+        const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
+        var settings = new UserSettings { Size = 60, ReplaceTaskbar = true };
+        using (var platform = new PlatformServices(true))
+        using (var ui = new DesktopUi(platform, settings, delegate {}, delegate {}))
+        {
+            var screenType = Product.GetType("Lunaris.ScreenInfo", true);
+            var bounds = new Rect(-31000, -31000, 1500, 900);
+            var screen = Activator.CreateInstance(screenType, hidden, null, new object[]{"test","test",true,bounds,bounds,1d}, null);
+            var type = Product.GetType("Lunaris.DockSurface", true);
+            var dock = (Window)Activator.CreateInstance(type, hidden, null, new object[]{ui,screen}, null);
+            var strip = (StackPanel)type.GetField("strip",hidden).GetValue(dock);
+            Action render = () => type.GetMethod("Render",hidden | BindingFlags.DeclaredOnly).Invoke(dock,new object[]{screen});
+            Action checkBounds = delegate {
+                dock.UpdateLayout();
+                var last = strip.Children.OfType<Button>().Last();
+                double end = last.TranslatePoint(new Point(last.ActualWidth, 0), dock).X;
+                Check(end <= dock.ActualWidth, "last Dock button fits inside the window (" + end + " / " + dock.ActualWidth + ")");
+            };
+            try {
+                string appPath = System.IO.Path.Combine(Environment.SystemDirectory, "charmap.exe");
+                settings.Pins.Add(appPath);
+                settings.Pins.Add(@"dock-directory:C:\A");
+                render();
+                type.GetMethod("SetRevealed",hidden).Invoke(dock,new object[]{true,false});
+                Pump(90);
+                if (SystemParameters.ClientAreaAnimation) {
+                    Func<Button> appButton = () => strip.Children.OfType<Button>().Single(b =>
+                        System.Windows.Automation.AutomationProperties.GetAutomationId(b) == "Dock.App");
+                    Func<Border> artwork = () => (Border)((Grid)appButton().Content).Children[0];
+                    Func<TranslateTransform> bounce = () => (TranslateTransform)((TransformGroup)artwork().RenderTransform).Children.Last();
+                    var motion = bounce();
+                    string id = ((string)appButton().Tag).Substring("app:".Length);
+                    type.GetMethod("Bounce",hidden).Invoke(dock,new object[]{id});
+                    Pump(105);
+                    Check(motion.Y < -2 && motion.Y >= -9, "opening an app lifts its artwork a few DIP");
+                    render();
+                    Check(Object.ReferenceEquals(bounce(), motion), "refreshing the running indicator keeps the active bounce");
+                    Pump(350);
+                    Check(Near(motion.Y, 0), "the icon settles at its original position");
+                }
+                // A previous unconstrained measure can still be valid on the
+                // plate when the catalogue updates its child strip in the same turn.
+                ((FrameworkElement)strip.Parent).Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                for (int i=0; i<12; i++)
+                    settings.Pins.Add(i%3==0 ? "dock-separator:"+i : @"dock-directory:C:\Folder"+i);
+                render(); Pump(350);
+                checkBounds();
+                settings.Pins.RemoveRange(1,8);
+                render(); Pump(60);
+                settings.Pins.AddRange(Enumerable.Range(0,45).Select(i => @"dock-directory:C:\Overflow"+i));
+                render(); Pump(350);
+                Check((string)strip.Children.OfType<Button>().Last().Tag == "overflow", "crowded Dock offers remaining apps in its overflow menu");
+                checkBounds();
+            } finally { dock.Close(); }
+        }
+    }
     static void Motion()
     {
         var type=Product.GetType("Lunaris.DockSurface+SlideCurve",true);
@@ -211,7 +270,7 @@ internal static class DockArtMotionTests
     }
     [STAThread] static int Main()
     {
-        try { Motion(); Items(); Alpha(); Art(); return 0; }
+        try { Motion(); Items(); DockWidth(); Alpha(); Art(); return 0; }
         catch(Exception ex) { Console.WriteLine("FAIL "+ex); return 1; }
     }
 }

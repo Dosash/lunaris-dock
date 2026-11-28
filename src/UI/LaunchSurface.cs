@@ -37,10 +37,21 @@ namespace Lunaris
         private readonly LaunchNavigationMotion navigation;
         private readonly StackPanel pager = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
         private readonly DispatcherTimer outside;
-        private readonly TranslateTransform slide = new TranslateTransform();
+        private readonly ScaleTransform zoom = new ScaleTransform();
+        private ScreenInfo panelScreen;
+        private Rect launchButton = Rect.Empty;
+        private IntPtr launchDock;
+        private bool inFlight;
         private readonly List<LibraryItem> results = new List<LibraryItem>();
         private readonly List<Border> frames = new List<Border>();
-        private int columns = 5, rows = 4, selected, animationId;
+        private int columns = 5, rows = 4, selected;
+        private AnimationFrameClock flightClock;
+        private LaunchComposition composition;
+        private DispatcherTimer flightEnd;
+        private Func<double> composedProgress;
+        private double startScale, endScale, startAlpha, endAlpha;
+        private double CurrentScale { get { return composedProgress == null ? zoom.ScaleX : startScale + (endScale-startScale)*composedProgress(); } }
+        private double CurrentAlpha { get { return composedProgress == null ? surface.Opacity : startAlpha + (endAlpha-startAlpha)*composedProgress(); } }
         private int powerDialogRequested;
         private double cellWidth = 120, iconSize = 58;
         private string category = "All";
@@ -79,7 +90,7 @@ namespace Lunaris
             layers.Children.Add(layout);
             layers.Children.Add(editor);
             glass.Child = layers;
-            surface.RenderTransform = slide;
+            surface.RenderTransform = zoom;
             layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             layout.RowDefinitions.Add(new RowDefinition());
@@ -190,7 +201,10 @@ namespace Lunaris
                     if (IsOpen && !opening && !ui.IconEditorOpen && !IsActive && LaunchGlass.LostForeground()) Dismiss();
                 }));
             };
-            Closed += delegate { outside.Stop(); navigation.Cancel(); ++animationId; };
+            Closed += delegate {
+                outside.Stop(); navigation.Cancel(); StopFlightFrames();
+                if (composition != null) composition.Dispose();
+            };
             ApplyTheme();
         }
 
@@ -215,6 +229,7 @@ namespace Lunaris
         internal void ApplyTheme()
         {
             navigation.Cancel();
+            navigationLogo.Source = LaunchArtwork.ForTheme();
             PaintGlass();
             headerRule.BorderBrush = Translucent(Appearance.Muted,57);
             title.Foreground = Appearance.Text; searchGlyph.Foreground = Appearance.Muted; placeholder.Foreground = Appearance.Muted;
@@ -300,7 +315,15 @@ namespace Lunaris
         {
             const int settingChanged = 0x001A;
             const int themeChanged = 0x031A;
-            if (message == settingChanged && !Appearance.Motion) navigation.Cancel();
+            if (message == 0x0084 && inFlight) { // Keep the Dock clickable inside the temporary animation bounds.
+                long pos = lParam.ToInt64();
+                var point = new Point(unchecked((short)pos), unchecked((short)(pos >> 16)));
+                if (!lastBounds.Contains(point)) { handled = true; return new IntPtr(-1); }
+            }
+            if (message == settingChanged && !Appearance.Motion) {
+                navigation.Cancel();
+                if (inFlight) FinishFlight(!closing);
+            }
             if ((message == settingChanged || message == themeChanged) && backdrop != null && !LaunchGlass.Enabled()) {
                 backdrop = null;
                 glass.Background = Appearance.Surface;
@@ -308,19 +331,25 @@ namespace Lunaris
             return IntPtr.Zero;
         }
 
-        internal void Open() { Open(ui.ActiveMonitor, LaunchLibrary.Root); }
-
-        internal void Open(ScreenInfo screen, string destination)
+        internal void Open(ScreenInfo screen, string destination, Rect origin, IntPtr dock)
         {
-            opening = true; closing = false; ++animationId;
+            bool reverse = closing && IsVisible && launchButton == origin && screen.SameLayout(panelScreen);
+            if (!reverse && inFlight) FinishFlight(false);
+            opening = true; closing = false;
+            launchButton = origin;
+            launchDock = dock;
             try {
                 var hwnd = new WindowInteropHelper(this).EnsureHandle();
                 CloseEditor(false);
                 selected = 0; category = "All"; folderId = destination; search.Clear();
                 BuildPills(); Reposition(screen);
-                Show(); screen.Place(this, PanelBounds(screen)); Activate(); ui.Platform.FocusWindow(hwnd);
+                if (Appearance.Motion && !origin.IsEmpty && !reverse) {
+                    PrepareComposition(hwnd, true);
+                    if (composition == null) surface.Opacity = 0;
+                }
+                Show(); PlacePanel(); Activate(); ui.Platform.FocusWindow(hwnd);
                 Keyboard.Focus(search); mouseDown = LaunchGlass.ButtonsDown(); outside.Start();
-                Animate(true);
+                Animate(true, reverse);
                 Dispatcher.BeginInvoke(DispatcherPriority.Input,new Action(delegate {
                     if (IsOpen && IsActive) Keyboard.Focus(search);
                 }));
@@ -344,6 +373,11 @@ namespace Lunaris
         {
             if (screen == null) return;
             var bounds = PanelBounds(screen);
+            if (inFlight && !opening && (bounds != lastBounds || !screen.SameLayout(panelScreen))) {
+                bool wasClosing = closing;
+                FinishFlight(!wasClosing);
+                if (wasClosing) return;
+            }
             if (!IsVisible || (!lastBounds.IsEmpty && !lastBounds.IntersectsWith(bounds))) {
                 var sample = new Rect(bounds.Left+glass.Margin.Left*screen.Scale,bounds.Top+glass.Margin.Top*screen.Scale,
                     Math.Max(1,bounds.Width-(glass.Margin.Left+glass.Margin.Right)*screen.Scale),
@@ -352,7 +386,8 @@ namespace Lunaris
                 PaintGlass();
             }
             lastBounds = bounds;
-            screen.Place(this,bounds);
+            panelScreen = screen;
+            PlacePanel();
             double w = bounds.Width/screen.Scale-glass.Margin.Left-glass.Margin.Right;
             double h = bounds.Height/screen.Scale-glass.Margin.Top-glass.Margin.Bottom;
             columns = Math.Max(1, Math.Min(5,(int)((w-35)/97)));
@@ -371,26 +406,138 @@ namespace Lunaris
         {
             if (!IsVisible || closing) return;
             navigation.Cancel();
-            closing = true; outside.Stop(); Animate(false);
+            closing = true; outside.Stop(); Animate(false, true);
         }
 
-        private void Animate(bool show)
+        // While zooming, let the layered window cover both endpoints so Windows
+        // does not clip the first frames at the edge of the final menu rectangle.
+        private void PlacePanel()
         {
-            int token = ++animationId;
-            surface.BeginAnimation(OpacityProperty,null); slide.BeginAnimation(TranslateTransform.YProperty,null);
-            Action done = delegate {
-                if (!show && token == animationId && IsVisible) {
-                    Hide(); backdrop = null; glass.Background = Appearance.Surface;
-                    closing = false; ui.LaunchpadClosed();
-                }
-            };
-            if (!Appearance.Motion) { done(); return; }
-            var ms = TimeSpan.FromMilliseconds(show ? 145 : 85);
-            var fade = new DoubleAnimation(show ? .15 : 1,show ? 1 : .08,ms);
-            fade.Completed += delegate { done(); };
-            surface.BeginAnimation(OpacityProperty,fade);
-            slide.BeginAnimation(TranslateTransform.YProperty,new DoubleAnimation(show ? 7 : 0,show ? 0 : 5,ms) {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+            var host = lastBounds;
+            if (inFlight && composition == null && !launchButton.IsEmpty) host.Union(launchButton);
+            double dpi = panelScreen.Scale;
+            surface.Margin = new Thickness((lastBounds.Left - host.Left) / dpi, (lastBounds.Top - host.Top) / dpi,
+                (host.Right - lastBounds.Right) / dpi, (host.Bottom - lastBounds.Bottom) / dpi);
+            panelScreen.Place(this, host);
+        }
+
+        private void PrepareComposition(IntPtr hwnd, bool cloak)
+        {
+            try {
+                if (composition == null) composition = new LaunchComposition(hwnd, FinishAtPointer);
+                if (cloak) composition.HideOriginal();
+            } catch (ExternalException ex) { DropComposition(ex); }
+        }
+
+        internal void PrepareWindow()
+        {
+            // Create the layered HWND and its compositor while the Dock is idle.
+            // The next Open still samples the current monitor, library and desktop.
+            PrepareComposition(new WindowInteropHelper(this).EnsureHandle(), false);
+        }
+
+        private void DropComposition(ExternalException ex)
+        {
+            Trace.WriteLine(ex);
+            if (composition != null) { composition.Dispose(); composition = null; }
+        }
+
+        private Point? FinishAtPointer(Point screenPoint)
+        {
+            if (!inFlight || closing) return null;
+            double scale = CurrentScale, dpi = panelScreen.Scale;
+            var client = new Point((screenPoint.X-lastBounds.X-zoom.CenterX*dpi*(1-scale))/scale,
+                (screenPoint.Y-lastBounds.Y-zoom.CenterY*dpi*(1-scale))/scale);
+            if (client.X < 0 || client.X >= lastBounds.Width || client.Y < 0 || client.Y >= lastBounds.Height) {
+                Dismiss();
+                return null;
+            }
+            FinishFlight(true);
+            return client;
+        }
+
+        private void Animate(bool show, bool fromCurrent)
+        {
+            double previousScale = CurrentScale, previousAlpha = CurrentAlpha;
+            StopFlightFrames();
+            if (!Appearance.Motion || launchButton.IsEmpty) { FinishFlight(show); return; }
+            double small = Math.Min(.5, Math.Min(launchButton.Width / lastBounds.Width, launchButton.Height / lastBounds.Height));
+            // At the initial scale the panel centre coincides with the centre of the clicked button.
+            zoom.CenterX = (launchButton.X + launchButton.Width / 2 - lastBounds.X - small * lastBounds.Width / 2)
+                / ((1 - small) * panelScreen.Scale);
+            zoom.CenterY = (launchButton.Y + launchButton.Height / 2 - lastBounds.Y - small * lastBounds.Height / 2)
+                / ((1 - small) * panelScreen.Scale);
+            double from = fromCurrent ? previousScale : small, alpha = fromCurrent ? previousAlpha : 0;
+            double to = show ? 1 : small;
+            inFlight = true;
+            double duration = Math.Max(.07, (show ? .30 : .18) * Math.Abs(to-from) / (1-small));
+            var ease = new CubicEase { EasingMode = show ? EasingMode.EaseOut : EasingMode.EaseInOut };
+            if (StartComposedFlight(show, from, to, alpha, duration, ease)) return;
+            zoom.ScaleX = zoom.ScaleY = from;
+            surface.Opacity = alpha;
+            PlacePanel();
+            if (surface.CacheMode == null) surface.CacheMode = new BitmapCache();
+            flightClock = new AnimationFrameClock(Dispatcher, delegate(double elapsed) {
+                if (elapsed >= duration) { FinishFlight(show); return; }
+                double t = ease.Ease(elapsed / duration);
+                zoom.ScaleX = zoom.ScaleY = from + (to - from) * t;
+                surface.Opacity = alpha + ((show ? 1 : 0) - alpha) * t;
+            });
+        }
+
+        private bool StartComposedFlight(bool show, double from, double to, double alpha, double duration, CubicEase ease)
+        {
+            PrepareComposition(new WindowInteropHelper(this).Handle, false);
+            if (composition == null) return false;
+            try {
+                double dpi = panelScreen.Scale;
+                int frames = Math.Max(1, (int)Math.Round(duration * Program.AnimationFrameRate));
+                zoom.ScaleX = zoom.ScaleY = surface.Opacity = 1;
+                long begin = composition.Play(lastBounds, launchButton, launchDock,
+                    new Point(zoom.CenterX*dpi, zoom.CenterY*dpi), frames, ease.Ease, from, to, alpha, show ? 1 : 0);
+                startScale = from; endScale = to; startAlpha = alpha; endAlpha = show ? 1 : 0;
+                composedProgress = delegate {
+                    double elapsed = (Stopwatch.GetTimestamp()-begin)/(double)Stopwatch.Frequency;
+                    return ease.Ease(Math.Min(frames, Math.Max(0, Math.Floor(elapsed * Program.AnimationFrameRate - LaunchComposition.SamplePhase)))/frames);
+                };
+                flightEnd = new DispatcherTimer(DispatcherPriority.Render) {
+                    Interval = TimeSpan.FromSeconds((frames+1)/(double)Program.AnimationFrameRate)
+                };
+                flightEnd.Tick += delegate { FinishFlight(show); };
+                flightEnd.Start();
+                return true;
+            } catch (ExternalException ex) {
+                DropComposition(ex);
+                return false;
+            }
+        }
+
+        private void StopFlightFrames()
+        {
+            if (flightEnd != null) { flightEnd.Stop(); flightEnd = null; }
+            composedProgress = null;
+            if (flightClock == null) return;
+            flightClock.Stop();
+            flightClock = null;
+        }
+
+        private void FinishFlight(bool show)
+        {
+            bool composed = composedProgress != null;
+            StopFlightFrames();
+            if (!show) Hide();
+            inFlight = false;
+            zoom.ScaleX = zoom.ScaleY = surface.Opacity = 1;
+            surface.CacheMode = null;
+            if (!composed) PlacePanel();
+            if (composition != null) {
+                try { composition.Clear(show && composed); }
+                catch (ExternalException ex) { DropComposition(ex); }
+            }
+            if (!show) {
+                backdrop = null; glass.Background = Appearance.Surface;
+                closing = false; ui.LaunchpadClosed();
+            }
         }
 
         private void OpenActions()

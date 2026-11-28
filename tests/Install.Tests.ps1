@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ExpectedUserSid,
-    [string]$Installer = (Join-Path $PSScriptRoot '..\release\1.3.1.8\LunarisDock-1.3.1.8-x64-Setup.exe'),
+    [string]$Installer = (Join-Path $PSScriptRoot '..\release\1.3.1.9\LunarisDock-1.3.1.9-x64-Setup.exe'),
     [string]$PreviousInstaller
 )
 $ErrorActionPreference = 'Stop'

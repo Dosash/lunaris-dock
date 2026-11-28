@@ -23,6 +23,7 @@ namespace Lunaris
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Button clock, notifications, network, sound, battery, tray, inputLanguage;
         private readonly StatusMenus menus;
+        private readonly SteamTrayMenu steamMenu = new SteamTrayMenu();
         private readonly Dictionary<string,Button> trayButtons = new Dictionary<string,Button>();
         private const double TrayIconSize = 18;
         private readonly List<Button> actions = new List<Button>();
@@ -71,7 +72,7 @@ namespace Lunaris
             scroller.PreviewMouseWheel += (s,e) => { scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset-e.Delta/3.0); e.Handled=true; };
             row.Children.Add(scroller); frame.Child = row; Content = frame;
             Closing += delegate {
-                closed = true; UpdateTrayHost(); menus.Close();
+                closed = true; steamMenu.Cancel(); UpdateTrayHost(); menus.Close();
                 if (position != null) { position.Dispose(); position = null; }
             };
             ApplyTheme();
@@ -177,8 +178,8 @@ namespace Lunaris
             scroller.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             ((TextBlock)tray.Content).Text = show ? "\uE76C" : "\uE76B";
             SetExpansionHint();
-            if (show) RefreshTray();
-            else { apps.Children.Clear(); trayButtons.Clear(); }
+            if (show) { NotificationArea.RefreshOpenStrip(); RefreshTray(); }
+            else { steamMenu.Cancel(); apps.Children.Clear(); trayButtons.Clear(); }
         }
 
         private void UpdateTrayHost()
@@ -225,8 +226,11 @@ namespace Lunaris
             Point q = button.PointToScreen(new Point(button.ActualWidth,button.ActualHeight));
             var bounds = new Int32Rect((int)Math.Round(p.X), (int)Math.Round(p.Y),
                 (int)Math.Round(q.X) - (int)Math.Round(p.X), (int)Math.Round(q.Y) - (int)Math.Round(p.Y));
-            if (!NotificationArea.Activate(item, context, (int)Math.Round(point.X), (int)Math.Round(point.Y), bounds))
+            steamMenu.Watch(item.ProcessId, bounds, screen.WorkArea, Math.Round(point.X));
+            if (!NotificationArea.Activate(item, context, (int)Math.Round(point.X), (int)Math.Round(point.Y), bounds)) {
+                steamMenu.Cancel();
                 TrayMessage("StatusTrayUnavailable");
+            }
         }
 
         private Button CreateTrayButton(NotificationArea.Item item)
