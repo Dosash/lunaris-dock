@@ -8,8 +8,8 @@ param(
     [switch]$StoreOnly
 )
 $ErrorActionPreference = 'Stop'
-if (!$ZipPath) { $ZipPath = Join-Path $PSScriptRoot '..\release\1.3.1.6\LunarisDock-1.3.1.6-x64-Portable.zip' }
-if (!$OutDir) { $OutDir = Join-Path $PSScriptRoot '..\build\test-results\1.3.1.6\portable' }
+if (!$ZipPath) { $ZipPath = Join-Path $PSScriptRoot '..\release\1.3.1.8\LunarisDock-1.3.1.8-x64-Portable.zip' }
+if (!$OutDir) { $OutDir = Join-Path $PSScriptRoot '..\build\test-results\1.3.1.8\portable' }
 $zipFile = Get-Item -LiteralPath $ZipPath
 $log = [IO.Path]::GetFullPath($OutDir)
 [void][IO.Directory]::CreateDirectory($log)

@@ -6,7 +6,7 @@ param(
     [switch]$NativeStart
 )
 $ErrorActionPreference = 'Stop'
-if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.1.6\LunarisDock-Portable\LunarisDock.exe' }
+if (!$ExePath) { $ExePath = Join-Path $PSScriptRoot '..\release\1.3.1.8\LunarisDock-Portable\LunarisDock.exe' }
 . "$PSScriptRoot\Lab.ps1"
 Assert-LabAccount $ExpectedUserSid
 $exe = (Resolve-Path -LiteralPath $ExePath).Path

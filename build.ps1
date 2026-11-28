@@ -4,7 +4,7 @@ param(
     [switch]$PortableOnly,
     [switch]$InstallerOnly,
     [string]$Iscc,
-    [string]$PackageVersion = '1.3.1.6'
+    [string]$PackageVersion = '1.3.1.8'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +31,8 @@ try {
     $argsCsc = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/debug-', '/checked-',
         '/warn:4', '/codepage:65001', '/main:Lunaris.Program', "/out:$build\LunarisDock.exe",
         "/win32manifest:$source\app.manifest", '/utf8output')
-    if (Test-Path "$source\LunarisDock.ico") { $argsCsc += "/win32icon:$source\LunarisDock.ico" }
+    $argsCsc += "/win32icon:$source\LunarisDock.ico"
+    $argsCsc += "/resource:$source\LunarisDock.ico,Lunaris.LunarisDock.ico"
     $argsCsc += "/resource:$source\UI\Preferences.xaml,Lunaris.Preferences.xaml"
     $argsCsc += "/resource:$source\UI\StatusMenuStyles.xaml,Lunaris.StatusMenuStyles.xaml"
     foreach ($code in 'en','ru','de','es','zh-CN') {

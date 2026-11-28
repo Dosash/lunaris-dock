@@ -169,15 +169,22 @@ namespace Lunaris
                 Child = text, IsHitTestVisible = false };
         }
 
-        internal static UIElement LaunchIcon(double size)
+        private static readonly Lazy<BitmapSource> LaunchArtwork = new Lazy<BitmapSource>(() =>
         {
-            var tiles = new UniformGrid { Rows = 2, Columns = 2, Margin = new Thickness(size * .21) };
-            foreach (var color in new[] { "#70CCFE", "#8C97FF", "#65D4C6", "#C091F0" })
-                tiles.Children.Add(new Border { Background = Brush(color), CornerRadius = new CornerRadius(size * .045),
-                    Margin = new Thickness(size * .030) });
-            return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size * .24),
-                Background = new LinearGradientBrush(Brush("#3D4B70").Color, Brush("#252A44").Color, 70),
-                BorderBrush = Brush("#60697B9C"), BorderThickness = new Thickness(1), Child = tiles };
+            using (var stream = typeof(Visuals).Assembly.GetManifestResourceStream("Lunaris.LunarisDock.ico"))
+            {
+                var decoder = new IconBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+                var source = decoder.Frames.OrderByDescending(frame => frame.PixelWidth).First();
+                source.Freeze();
+                return source;
+            }
+        });
+
+        internal static Image LaunchIcon(double size)
+        {
+            var image = new Image { Source = LaunchArtwork.Value, Width = size, Height = size, IsHitTestVisible = false };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+            return image;
         }
 
         internal static MenuItem MenuItem(string title, Action action)

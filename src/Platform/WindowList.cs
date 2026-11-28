@@ -79,6 +79,24 @@ namespace Lunaris
             return FullscreenMonitor(true) != IntPtr.Zero;
         }
 
+        // SPI_SETWORKAREA can leave an already maximized window on a secondary
+        // display at its previous height. Resize only frames still filling the
+        // old work area. GetWindowRect includes invisible DPI-dependent borders.
+        internal static void UpdateMaximizedBounds(IntPtr monitor, Rect previous, int newBottom)
+        {
+            EnumWindows(delegate(IntPtr hwnd, IntPtr ignored) {
+                if (!IsZoomed(hwnd) || !IsWindowVisible(hwnd) || MonitorFromWindow(hwnd, 0) != monitor ||
+                    (GetWindowLongPtr(hwnd, -16).ToInt64() & 0x00C40000) == 0) return true;
+                Rect frame, raw;
+                if (DwmGetWindowBounds(hwnd, 9, out frame, 16) != 0 || frame.Left != previous.Left || frame.Right != previous.Right ||
+                    frame.Top != previous.Top || frame.Bottom != previous.Bottom || !GetWindowRect(hwnd, out raw)) return true;
+                const uint flags = 0x0002 | 0x0004 | 0x0010 | 0x0200 | 0x4000; // NOMOVE, NOZORDER, NOACTIVATE, NOOWNERZORDER, ASYNCWINDOWPOS
+                SetWindowPos(hwnd, IntPtr.Zero, 0, 0, raw.Right - raw.Left,
+                    raw.Bottom - raw.Top + newBottom - previous.Bottom, flags);
+                return true;
+            }, IntPtr.Zero);
+        }
+
         internal IntPtr FullscreenMonitor(bool primaryOnly)
         {
             IntPtr window = GetForegroundWindow();
@@ -206,7 +224,7 @@ namespace Lunaris
             [PreserveSig] int GetAt(uint index, out PropertyKey key);
             [PreserveSig] int GetValue(ref PropertyKey key, ref Variant value);
         }
-        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
         [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
         [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public Rect Bounds, Work; public int Flags; }
         internal delegate bool EnumProc(IntPtr window, IntPtr arg);
@@ -225,7 +243,8 @@ namespace Lunaris
         [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, int command);
         [DllImport("user32.dll")] private static extern IntPtr GetTopWindow(IntPtr parent);
-        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
+        [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr window, out Rect rect);
+        [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] private static extern int DwmGetWindowBounds(IntPtr hwnd, int attr, out Rect rect, int bytes);
         [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int length);

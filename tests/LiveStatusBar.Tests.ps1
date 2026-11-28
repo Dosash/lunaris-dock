@@ -2,7 +2,7 @@
 param(
     [int]$DockProcessId,
     [switch]$AllowLegacyStart,
-    [ValidateSet('All','Tray','Menus','Sound','Network','Language','Start','Notifications')]
+    [ValidateSet('All','Tray','Menus','Sound','Network','Language','Start','Notifications','WorkArea')]
     [string]$Scenario='All',
     [switch]$RequireMixedDpi,
     [switch]$CompileOnly,
@@ -25,7 +25,7 @@ if (!$CompileOnly) {
     if ((Get-FileHash -LiteralPath $ReferenceExe).Hash -ne (Get-FileHash -LiteralPath $owner.ExecutablePath).Hash) {
         throw 'ReferenceExe differs from the running Dock binary.'
     }
-    $canonical = @('All','Tray','Menus','Sound','Network','Language','Start','Notifications') -eq $Scenario
+    $canonical = @('All','Tray','Menus','Sound','Network','Language','Start','Notifications','WorkArea') -eq $Scenario
     $arguments = @([string]$DockProcessId, [string]$guard[0].ProcessId, $canonical[0])
     if ($RequireMixedDpi) { $arguments += '--require-mixed-dpi' }
     if ($AllowLegacyStart) { $arguments += '--allow-legacy-start' }

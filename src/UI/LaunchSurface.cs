@@ -30,7 +30,6 @@ namespace Lunaris
         private readonly Button findFiles;
         private readonly Button addToEmptyFolder;
         private readonly TextBlock title, placeholder, searchGlyph, empty;
-        private readonly Border[] logoTiles = new Border[4];
         private readonly Button more;
         private readonly Border moreCircle = new Border();
         private readonly WrapPanel pills = new WrapPanel();
@@ -90,13 +89,9 @@ namespace Lunaris
             header.ColumnDefinitions.Add(new ColumnDefinition());
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var logo = new UniformGrid { Rows = 2, Columns = 2, Width = 22, Height = 22,
-                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0,0,10,0) };
-            for (int i=0; i<4; i++) {
-                logoTiles[i] = new Border { CornerRadius = new CornerRadius(2.2), Margin = new Thickness(1),
-                    Opacity = i == 1 ? .65 : .95 };
-                logo.Children.Add(logoTiles[i]);
-            }
+            var logo = Visuals.LaunchIcon(22);
+            logo.VerticalAlignment = VerticalAlignment.Center;
+            logo.Margin = new Thickness(0,0,10,0);
             header.Children.Add(logo);
             navigationLogo = logo;
             backButton = Visuals.Button("Launchpad.Folder.Back", Loc.Get("UpLevel"));
@@ -222,7 +217,6 @@ namespace Lunaris
             navigation.Cancel();
             PaintGlass();
             headerRule.BorderBrush = Translucent(Appearance.Muted,57);
-            foreach (var t in logoTiles) t.Background = Appearance.Text;
             title.Foreground = Appearance.Text; searchGlyph.Foreground = Appearance.Muted; placeholder.Foreground = Appearance.Muted;
             breadcrumb.Foreground = Appearance.Muted;
             search.Foreground = Appearance.Text; search.CaretBrush = Appearance.Text; search.SelectionBrush = Appearance.Selection;

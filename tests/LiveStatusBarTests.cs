@@ -31,6 +31,28 @@ internal static partial class PreviewTests
     [StructLayout(LayoutKind.Sequential)]
     struct AppBarData { public int Size; public IntPtr Window; public uint Callback,Edge; public NativeRect Rect; public IntPtr Parameter; }
     [DllImport("shell32.dll")] static extern UIntPtr SHAppBarMessage(uint msg,ref AppBarData data);
+    [DllImport("dwmapi.dll",EntryPoint="DwmGetWindowAttribute")] static extern int FrameBounds(IntPtr hwnd,int attribute,out NativeRect bounds,int size);
+
+    static void CheckMaximize()
+    {
+        foreach(var screen in Screen.AllScreens)
+        using(var form=new Form { StartPosition=FormStartPosition.Manual, ShowInTaskbar=false,
+            Bounds=new System.Drawing.Rectangle(screen.Bounds.Left+40,screen.Bounds.Top+70,320,200) })
+        {
+            form.Show();
+            var monitor=MonitorFromWindow(form.Handle,0);
+            form.WindowState=FormWindowState.Maximized;
+            Until(delegate {
+                Application.DoEvents();
+                var data=new MonitorData { Size=Marshal.SizeOf(typeof(MonitorData)) };
+                NativeRect frame;
+                return IsZoomed(form.Handle) && MonitorFromWindow(form.Handle,0)==monitor && GetMonitorInfo(monitor,ref data) &&
+                    data.Monitor.Left==screen.Bounds.Left && data.Monitor.Top==screen.Bounds.Top &&
+                    data.Work.Bottom==data.Monitor.Bottom && FrameBounds(form.Handle,9,out frame,16)==0 &&
+                    frame.Bottom==data.Work.Bottom && frame.Top==data.Work.Top;
+            },"maximized window reaches the physical bottom and respects the work-area top on "+screen.DeviceName);
+        }
+    }
 
     static void CheckExpandedAppBar(AE bar,IntPtr shell)
     {
@@ -188,21 +210,22 @@ internal static partial class PreviewTests
             Console.WriteLine("PASS running Dock PID {0}, matching guardian PID {1}, existing Explorer taskbar hidden",dockId,guardianId);
 
             var bars=Roots().Where(r=>r.Current.AutomationId=="StatusBar" && Visible(r)).ToArray();
-            if(bars.Length==0) throw new Exception("No visible status bar belongs to the selected Dock PID.");
+            if(bars.Length==0 && scenario!="WorkArea") throw new Exception("No visible status bar belongs to the selected Dock PID.");
             foreach(var item in bars) {
                 CheckAppBar(item);
                 if(!allowLegacyStart && Control(item,"StatusBar.Start")!=null)
                     throw new Exception("Unexpected Start button in the upper status bar.");
             }
             if(!allowLegacyStart) Console.WriteLine("PASS upper status bars have no Start button");
-            var bar=bars.First();
+            var bar=bars.FirstOrDefault();
             try
             {
+                if(scenario=="All" || scenario=="WorkArea") CheckMaximize();
                 if(scenario=="All" || scenario=="Start") CheckStartEntries(bar);
                 if(scenario=="All" || scenario=="Notifications") CheckLiveNotifications(bar);
                 if(scenario=="All" || scenario=="Tray")
                     CheckTrayBars(bars,true,requireMixedDpi,expanded=>CheckExpandedAppBar(expanded,shell));
-                if(scenario!="Start" && scenario!="Notifications" && scenario!="Tray")
+                if(scenario!="Start" && scenario!="Notifications" && scenario!="Tray" && scenario!="WorkArea")
                     CheckStatusMenus(bar,scenario=="All" ? "Menus" : scenario);
                 if(dock.HasExited || guardian.HasExited || ExplorerTaskbar()!=shell)
                     throw new Exception("One of the original processes or the Explorer taskbar was replaced.");

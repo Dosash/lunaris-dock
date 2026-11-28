@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows.Threading;
+using Rect = Lunaris.WindowList.Rect;
 
 namespace Lunaris
 {
@@ -115,7 +116,7 @@ namespace Lunaris
                         WriteSnapshot(journal.ToArray());
                         try
                         {
-                            return Supervise(parent, end, ready);
+                            return Supervise(parent, end, ready, journal);
                         }
                         finally
                         {
@@ -142,23 +143,30 @@ namespace Lunaris
             catch (AbandonedMutexException) { return true; }
         }
 
-        private static int Supervise(Process parent, EventWaitHandle end, EventWaitHandle ready)
+        private static int Supervise(Process parent, EventWaitHandle end, EventWaitHandle ready, List<string> journal)
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
             var stateCheck = Stopwatch.StartNew();
             IntPtr lastTray = IntPtr.Zero;
-            Action refresh = delegate
+            Func<bool> refresh = delegate
             {
                 IntPtr tray = ShellTaskbar();
-                if (tray == IntPtr.Zero) { lastTray = IntPtr.Zero; return; }
+                if (tray == IntPtr.Zero) { lastTray = IntPtr.Zero; return false; }
                 if (tray != lastTray || stateCheck.ElapsedMilliseconds >= 1500)
                 {
                     if (GetAutoHide()) SetAutoHide(false);
                     lastTray = tray;
                     stateCheck.Restart();
                 }
-                foreach (IntPtr bar in Bars()) Hide(bar);
+                var bars = Bars();
+                bool readyForWindows = bars.Contains(tray);
+                foreach (IntPtr bar in bars)
+                {
+                    Hide(bar);
+                    if (WindowList.IsWindowVisible(bar) || !UpdateWorkArea(bar, journal, false)) readyForWindows = false;
+                }
+                return readyForWindows;
             };
             WinEvent callback = delegate(IntPtr hook, uint type, IntPtr hwnd, int obj, int child, uint thread, uint time)
             {
@@ -175,10 +183,7 @@ namespace Lunaris
                 for (;;)
                 {
                     if (parent.HasExited || end.WaitOne(0)) return 4;
-                    refresh();
-                    var bars = Bars();
-                    if (ShellTaskbar() != IntPtr.Zero && bars.Count > 0 &&
-                        !bars.Exists(WindowList.IsWindowVisible) && !GetAutoHide()) break;
+                    if (refresh() && !GetAutoHide()) break;
                     if (deadline.ElapsedMilliseconds >= 3200) return 4;
                     Thread.Sleep(40);
                 }
@@ -242,7 +247,8 @@ namespace Lunaris
                 writer.Flush();
                 file.Flush(true);
             }
-            File.Move(temporary, Journal);
+            if (File.Exists(Journal)) File.Replace(temporary, Journal, null);
+            else File.Move(temporary, Journal);
         }
 
         private static bool Restore()
@@ -252,6 +258,7 @@ namespace Lunaris
             if (lines.Length == 0 || (lines[0] != "1" && lines[0] != "0"))
                 throw new IOException(Loc.Get("RecoveryCorrupt"));
             bool autoHide = lines[0] == "1";
+            var journal = new List<string>(lines);
             var timer = Stopwatch.StartNew();
             while (timer.ElapsedMilliseconds < 6800)
             {
@@ -266,7 +273,10 @@ namespace Lunaris
                         bool visible = true;
                         foreach (IntPtr window in bars)
                             if (WindowList.IsWindowVisible(window) == (Array.IndexOf(lines, "-" + Device(window)) >= 0)) visible = false;
-                        if (visible) { File.Delete(Journal); return true; }
+                        if (visible && (autoHide || bars.TrueForAll(window => UpdateWorkArea(window, journal, true))))
+                        {
+                            File.Delete(Journal); return true;
+                        }
                     }
                 }
                 Thread.Sleep(90);
@@ -279,6 +289,36 @@ namespace Lunaris
             var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
             GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref info);
             return WindowList.Class(hwnd) + ":" + info.Device;
+        }
+
+        // A hidden Windows 11 taskbar can still own the bottom of rcWork. Change
+        // only an edge that coincides with its real window. Keep every other
+        // reservation, including the Lunaris status bar, as reported by Windows.
+        private static bool UpdateWorkArea(IntPtr bar, List<string> journal, bool restoring)
+        {
+            var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+            Rect taskbar;
+            IntPtr monitor = MonitorFromWindow(bar, 2);
+            if (!GetMonitorInfo(monitor, ref info) || !WindowList.GetWindowRect(bar, out taskbar)) return false;
+            var bounds = info.Bounds;
+            var work = info.Work;
+            if (taskbar.Bottom != bounds.Bottom || taskbar.Top >= taskbar.Bottom || taskbar.Top <= bounds.Top ||
+                taskbar.Left > work.Left || taskbar.Right < work.Right) return true;
+            if (work.Bottom != (restoring ? bounds.Bottom : taskbar.Top)) return true;
+
+            string marker = "work:" + WindowList.Class(bar) + ":" + info.Device;
+            if (!journal.Contains(marker))
+            {
+                if (restoring) return true;
+                journal.Add(marker);
+                WriteSnapshot(journal.ToArray());
+            }
+            work.Bottom = restoring ? taskbar.Top : bounds.Bottom;
+            // Session only. Broadcasting to Explorer makes it negotiate the
+            // hidden taskbar's space again.
+            if (!SystemParametersInfo(0x002F, 0, ref work, 0)) return false; // SPI_SETWORKAREA
+            WindowList.UpdateMaximizedBounds(monitor, info.Work, work.Bottom);
+            return true;
         }
 
         private static bool GetAutoHide()
@@ -297,7 +337,6 @@ namespace Lunaris
         }
 
         private delegate void WinEvent(IntPtr hook, uint type, IntPtr hwnd, int obj, int child, uint thread, uint time);
-        [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
         [StructLayout(LayoutKind.Sequential)] private struct AppBar
         {
             public int Size;
@@ -314,6 +353,7 @@ namespace Lunaris
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string Device;
         }
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+        [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern bool SystemParametersInfo(uint action, uint parameter, ref Rect value, uint flags);
         [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, int flags);
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr GetShellWindow();
         [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr last, string name, string caption);
